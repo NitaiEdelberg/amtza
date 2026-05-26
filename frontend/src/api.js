@@ -1,0 +1,44 @@
+const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+async function handleResponse(res) {
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Network error" }));
+    const message = typeof err.detail === "object" ? err.detail.message : err.detail;
+    throw new Error(message || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function checkHealth() {
+  const res = await fetch(`${BASE_URL}/health`);
+  return res.json();
+}
+
+export async function getRandomPair(lang = null) {
+  const url = lang ? `${BASE_URL}/pair?lang=${lang}` : `${BASE_URL}/pair`;
+  return handleResponse(await fetch(url));
+}
+
+export async function submitGuess(word1, word2, playerGuess, roundNum) {
+  return handleResponse(
+    await fetch(`${BASE_URL}/guess`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ word1, word2, player_guess: playerGuess, round_num: roundNum }),
+    })
+  );
+}
+
+export async function validateWord(word) {
+  return handleResponse(await fetch(`${BASE_URL}/validate/${encodeURIComponent(word)}`));
+}
+
+export async function getHint(word1, word2) {
+  return handleResponse(
+    await fetch(`${BASE_URL}/hint`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ word1, word2 }),
+    })
+  );
+}
