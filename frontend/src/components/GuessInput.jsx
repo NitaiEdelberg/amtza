@@ -35,7 +35,7 @@ export default function GuessInput({ onSubmit, disabled, currentPair, isLoading 
       .finally(() => setValidating(false));
   }, [debouncedValue]);
 
-  const isHebrew = /[֐-׿]/.test(value);
+  const isHebrew = currentPair?.language === "he";
   const pairWords = [
     currentPair?.word1?.toLowerCase(),
     currentPair?.word2?.toLowerCase(),
@@ -74,7 +74,7 @@ export default function GuessInput({ onSubmit, disabled, currentPair, isLoading 
           type="text"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder={isHebrew || !value ? "כתבו מילה..." : "type a word..."}
+          placeholder={isHebrew ? "כתבו מילה..." : "type a word..."}
           disabled={disabled || isLoading}
           autoComplete="off"
           autoCorrect="off"
@@ -90,7 +90,9 @@ export default function GuessInput({ onSubmit, disabled, currentPair, isLoading 
         className="btn btn--primary"
         disabled={!canSubmit}
       >
-        {isLoading ? "חושב..." : "שלח ניחוש 🎯"}
+        {isLoading
+          ? (isHebrew ? "חושב..." : "thinking...")
+          : (isHebrew ? "שלח ניחוש 🎯" : "Submit guess 🎯")}
       </button>
     </form>
   );

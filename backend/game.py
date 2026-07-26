@@ -1,9 +1,28 @@
 import random
 from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
 
-WIN_THRESHOLD = 0.90
+WIN_THRESHOLD = 0.70
+
+# "Homing" mechanism: nearest-neighbour midpoint search has no anchor to the original
+# pair, so a run of unlucky guesses can occasionally drift through a long chain of
+# locally-plausible-but-globally-irrelevant clusters (cities → historical figures →
+# mythology → astronomy → math…) for 30-50+ rounds without ever crossing WIN_THRESHOLD.
+# Past a grace period, gradually relax the win bar each round so every game is
+# guaranteed to converge in a bounded number of rounds — like two people who keep
+# circling back to the same general territory eventually just calling it a match.
+HOMING_GRACE_ROUNDS = 10
+HOMING_DECAY_PER_ROUND = 0.025
+HOMING_MIN_THRESHOLD = 0.50
+
+
+def _effective_threshold(round_num: int) -> float:
+    if round_num <= HOMING_GRACE_ROUNDS:
+        return WIN_THRESHOLD
+    relaxed = WIN_THRESHOLD - HOMING_DECAY_PER_ROUND * (round_num - HOMING_GRACE_ROUNDS)
+    return max(HOMING_MIN_THRESHOLD, relaxed)
 
 FUNNY_MESSAGES_HE = {
     "very_far": [
@@ -87,8 +106,8 @@ class RoundResult:
     computer_similarity: float
     player_computer_similarity: float
     is_won: bool
-    funny_message: str | None
-    win_message: str | None
+    funny_message: Optional[str]
+    win_message: Optional[str]
     language: str
 
 
@@ -97,15 +116,15 @@ def check_win(
     computer_word: str,
     player_vec: "np.ndarray",
     computer_vec: "np.ndarray",
+    round_num: int = 1,
 ) -> bool:
     if player_word.lower() == computer_word.lower():
         return True
     sim = float(np.dot(player_vec, computer_vec))
-    return sim > WIN_THRESHOLD
+    return sim > _effective_threshold(round_num)
 
 
-def get_funny_message(similarity: float, lang: str, word1: str, word2: str) -> str | None:
-    # Check easter eggs first
+def get_funny_message(similarity: float, lang: str, word1: str, word2: str) -> Optional[str]:
     egg_key = frozenset({word1.lower(), word2.lower()})
     if egg_key in EASTER_EGGS:
         return EASTER_EGGS[egg_key]
@@ -140,7 +159,7 @@ def build_round_result(
     player_sim = float(np.dot(player_vec, midpoint))
     computer_sim = float(np.dot(computer_vec, midpoint))
     player_computer_sim = float(np.dot(player_vec, computer_vec))
-    is_won = check_win(player_guess, computer_guess, player_vec, computer_vec)
+    is_won = check_win(player_guess, computer_guess, player_vec, computer_vec, round_num)
     funny_msg = None if is_won else get_funny_message(player_sim, lang, word1, word2)
     win_msg = get_win_message(lang) if is_won else None
     return RoundResult(

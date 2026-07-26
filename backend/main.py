@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
+from typing import Dict, List, Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -13,11 +14,14 @@ from embeddings import (
     WordNotFoundError,
     compute_midpoint,
     detect_language,
-    find_nearest,
+    find_best_middle,
     get_hints,
     get_word_vector,
+    is_valid_word,
     load_or_download_sync,
     normalize_word,
+    phrase_vec,
+    _phrase_tokens,
 )
 from game import build_round_result
 from word_pairs import get_random_pair
@@ -26,7 +30,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-spaces: dict[str, EmbeddingSpace] = {}
+spaces: Dict[str, EmbeddingSpace] = {}
 models_loaded = False
 
 
@@ -46,7 +50,6 @@ async def lifespan(app: FastAPI):
         logger.info("Both embedding models loaded successfully")
     except Exception as e:
         logger.error(f"Failed to load models: {e}")
-        # Keep models_loaded=False; health endpoint reports not ready
     yield
     spaces.clear()
 
@@ -75,7 +78,7 @@ async def health():
 
 
 @app.get("/pair")
-async def pair(lang: str | None = None):
+async def pair(lang: Optional[str] = None):
     return get_random_pair(lang)
 
 
@@ -84,6 +87,7 @@ class GuessRequest(BaseModel):
     word2: str
     player_guess: str
     round_num: int = 1
+    used_words: List[str] = []
 
 
 @app.post("/guess")
@@ -95,10 +99,11 @@ async def guess(req: GuessRequest):
         raise HTTPException(500, f"No embedding space for language: {lang}")
     space = spaces[lang]
 
-    # Validate and canonicalize player's guess
+    # normalize_word preserves spaces so multi-word phrases stay intact ("אייל גולן" → "אייל גולן")
     player_canonical = normalize_word(req.player_guess, lang)
-    player_vec = get_word_vector(space, player_canonical)
-    if player_vec is None:
+    try:
+        player_vec = phrase_vec(space, player_canonical)
+    except WordNotFoundError:
         raise HTTPException(
             422,
             detail={
@@ -109,9 +114,9 @@ async def guess(req: GuessRequest):
             },
         )
 
-    # Cannot guess the words that are already in the pair
-    pair_canonical = {normalize_word(req.word1, lang), normalize_word(req.word2, lang)}
-    if player_canonical in pair_canonical:
+    # Exclude all tokens from multi-word phrases (e.g. "תל" and "אביב" from "תל אביב")
+    pair_tokens = _phrase_tokens(space, req.word1) | _phrase_tokens(space, req.word2)
+    if player_canonical in pair_tokens:
         raise HTTPException(
             422,
             detail={
@@ -121,13 +126,33 @@ async def guess(req: GuessRequest):
             },
         )
 
-    # Compute midpoint and computer's guess
+    # Expand multi-word used words into individual tokens so the computer doesn't
+    # re-suggest any component of a phrase the player or computer already played.
+    used_canonical: set = set()
+    for w in req.used_words:
+        used_canonical |= _phrase_tokens(space, w)
+    # Do NOT exclude player_canonical — if computer independently picks the same word,
+    # that's the win condition. Only exclude pair words and already-used words.
+    exclude = pair_tokens | used_canonical
+
     try:
         midpoint = compute_midpoint(space, req.word1, req.word2)
+        computer_guess = find_best_middle(space, req.word1, req.word2, exclude=exclude)
     except WordNotFoundError as e:
         raise HTTPException(422, detail={"error": "pair_word_not_found", "message": str(e)})
 
-    computer_guess = find_nearest(space, midpoint, exclude=pair_canonical | {player_canonical})
+    if computer_guess is None:
+        # Extremely rare: the exclusion set has grown so large no valid middle word
+        # remains nearby. Surface a clean error instead of crashing on a None vector.
+        raise HTTPException(
+            422,
+            detail={
+                "error": "no_middle_word",
+                "message": "המחשב לא מצא מילה מתאימה לאמצע — נסו זוג מילים חדש" if lang == "he"
+                           else "The computer couldn't find a middle word — try a new pair",
+            },
+        )
+
     computer_vec = get_word_vector(space, computer_guess)
 
     result = build_round_result(
@@ -162,7 +187,7 @@ async def validate(word: str):
     lang = detect_language(word)
     space = spaces[lang]
     canonical = normalize_word(word, lang)
-    valid = canonical in space.word_to_idx
+    valid = is_valid_word(space, word)
     return {"valid": valid, "canonical": canonical, "language": lang}
 
 

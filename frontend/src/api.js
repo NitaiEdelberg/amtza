@@ -19,12 +19,12 @@ export async function getRandomPair(lang = null) {
   return handleResponse(await fetch(url));
 }
 
-export async function submitGuess(word1, word2, playerGuess, roundNum) {
+export async function submitGuess(word1, word2, playerGuess, roundNum, usedWords = []) {
   return handleResponse(
     await fetch(`${BASE_URL}/guess`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ word1, word2, player_guess: playerGuess, round_num: roundNum }),
+      body: JSON.stringify({ word1, word2, player_guess: playerGuess, round_num: roundNum, used_words: usedWords }),
     })
   );
 }

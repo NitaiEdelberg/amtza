@@ -300,9 +300,56 @@ body {
 /* ── Reveal Cards ────────────────────────────────────────────────────────────── */
 .reveal-card {
   display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-items: center;
+}
+
+.reveal-card__row {
+  display: flex;
   gap: 1rem;
   justify-content: center;
   flex-wrap: wrap;
+}
+
+/* ── Proximity Bar ───────────────────────────────────────────────────────────── */
+.proximity-bar {
+  width: 100%;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1.25rem;
+  animation: fadeIn 0.4s ease;
+}
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+.proximity-bar__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.proximity-bar__label { color: var(--text2); }
+
+.proximity-bar__score {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.proximity-bar__track {
+  height: 8px;
+  background: var(--bg3);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.proximity-bar__fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.7s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .flip-card {
@@ -521,12 +568,47 @@ body {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+.win-screen__word--pair {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.win-screen__word-sep {
+  font-size: 1.5rem;
+  font-weight: 400;
+  color: var(--text2);
+  -webkit-text-fill-color: var(--text2);
+}
 .win-screen__stat { color: var(--text2); }
 
 /* ── Responsive ─────────────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .app-main { padding: 1rem 0.75rem 3rem; }
+  .idle-screen__card { padding: 1.5rem 1.25rem; }
+  .game-board { gap: 1rem; }
+}
+
 @media (max-width: 480px) {
-  .app-title { font-size: 2.2rem; }
-  .word-chip { font-size: 1.3rem; min-width: 110px; padding: 0.6rem 1rem; }
-  .flip-card { width: 145px; height: 110px; }
-  .flip-card__word { font-size: 1.2rem; }
+  .app-title { font-size: 2rem; }
+  .app-subtitle { font-size: 0.9rem; }
+  .word-chip { font-size: 1.2rem; min-width: 100px; padding: 0.55rem 0.9rem; }
+  .flip-card { width: 135px; height: 105px; }
+  .flip-card__word { font-size: 1.1rem; }
+  .flip-card__label { font-size: 0.7rem; }
+  .similarity-meter { padding: 0.75rem 1rem; }
+  .proximity-bar { padding: 0.65rem 1rem; }
+  .idle-screen__card h2 { font-size: 1.3rem; }
+  .idle-screen__rules { font-size: 0.9rem; }
+  .guess-input input { font-size: 1rem; }
+  .btn--large { font-size: 1rem; padding: 0.75rem 1.5rem; }
+  .path-history__round { padding: 0.65rem; }
+}
+
+@media (max-width: 360px) {
+  .app-title { font-size: 1.8rem; }
+  .word-chip { font-size: 1.1rem; min-width: 90px; }
+  .flip-card { width: 125px; height: 95px; }
+  .flip-card__word { font-size: 1rem; }
 }

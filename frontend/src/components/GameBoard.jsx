@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import WordPair from "./WordPair";
 import GuessInput from "./GuessInput";
 import RevealCard from "./RevealCard";
@@ -21,12 +21,21 @@ export default function GameBoard({
   const isRevealing = gamePhase === "revealing";
   const isHe = currentPair?.language === "he";
 
+  // Auto-advance to win screen after reveal animation completes
+  useEffect(() => {
+    if (isRevealing && lastRound?.is_won) {
+      const t = setTimeout(() => onNextRound(), 2200);
+      return () => clearTimeout(t);
+    }
+  }, [isRevealing, lastRound?.is_won]);
+
   return (
     <div className="game-board">
       <WordPair
         word1={currentPair.word1}
         word2={currentPair.word2}
         roundNum={roundNum}
+        language={currentPair?.language}
       />
 
       {gamePhase === "guessing" && (
@@ -62,6 +71,8 @@ export default function GameBoard({
           <RevealCard
             playerGuess={lastRound.player_guess}
             computerGuess={lastRound.computer_guess}
+            proximity={lastRound.player_computer_similarity}
+            lang={lastRound.language}
             visible={true}
           />
           <SimilarityMeter
@@ -72,14 +83,16 @@ export default function GameBoard({
           {lastRound.funny_message && (
             <p className="funny-message">{lastRound.funny_message}</p>
           )}
-          <button className="btn btn--primary" onClick={onNextRound}>
-            {isHe ? "סיבוב הבא ←" : "Next Round →"}
-          </button>
+          {!lastRound.is_won && (
+            <button className="btn btn--primary" onClick={onNextRound}>
+              {isHe ? "סיבוב הבא ←" : "Next Round →"}
+            </button>
+          )}
         </>
       )}
 
       {history.length > 0 && gamePhase === "guessing" && (
-        <PathHistory history={history} />
+        <PathHistory history={history} language={currentPair?.language} />
       )}
     </div>
   );

@@ -15,6 +15,7 @@ export default function App() {
   const [hintWords, setHintWords] = useState([]);
   const [hintUsed, setHintUsed] = useState(false);
   const [selectedLang, setSelectedLang] = useState("he");
+  const [usedWords, setUsedWords] = useState([]);
 
   // Poll /health until models are loaded
   useEffect(() => {
@@ -46,6 +47,7 @@ export default function App() {
       setLastRound(null);
       setHintWords([]);
       setHintUsed(false);
+      setUsedWords([pair.word1, pair.word2]);
       setGamePhase("guessing");
     } finally {
       setIsLoading(false);
@@ -59,7 +61,8 @@ export default function App() {
         currentPair.word1,
         currentPair.word2,
         playerGuess,
-        roundNum
+        roundNum,
+        usedWords
       );
       setLastRound(result);
       setGamePhase("revealing");
@@ -85,6 +88,7 @@ export default function App() {
       word2: lastRound.new_pair[1],
       language: lastRound.language,
     });
+    setUsedWords((prev) => [...prev, lastRound.player_guess, lastRound.computer_guess]);
     setRoundNum((n) => n + 1);
     setHintWords([]);
     setHintUsed(false);
@@ -123,22 +127,41 @@ export default function App() {
         {gamePhase === "loading" && (
           <div className="loading-screen">
             <div className="loading-screen__spinner">⟳</div>
-            <p className="loading-screen__text">טוען מודלי שפה... ☕</p>
-            <p className="loading-screen__sub">זה לוקח כדקה בפעם הראשונה</p>
+            <p className="loading-screen__text">
+              {selectedLang === "he" ? "טוען מודלי שפה... ☕" : "Loading language models... ☕"}
+            </p>
+            <p className="loading-screen__sub">
+              {selectedLang === "he" ? "זה לוקח כדקה בפעם הראשונה" : "This takes about a minute the first time"}
+            </p>
           </div>
         )}
 
         {gamePhase === "idle" && (
           <div className="idle-screen">
             <div className="idle-screen__card">
-              <h2 dir="rtl">ברוכים הבאים! 👋</h2>
-              <p dir="rtl">אתה והמחשב מנסים למצוא את המילה שבאמצע — ביחד!</p>
-              <ul className="idle-screen__rules" dir="rtl">
-                <li>🧠 חשבו על מילה שבאמצע בין שתי המילים</li>
-                <li>🤫 אתם שולחים בו זמנית — לא רואים אחד את השני!</li>
-                <li>🔄 הניחוש שלכם הופך לזוג החדש</li>
-                <li>🏆 ניצחתם כשמגיעים לאותה מילה</li>
-              </ul>
+              {selectedLang === "he" ? (
+                <>
+                  <h2 dir="rtl">ברוכים הבאים! 👋</h2>
+                  <p dir="rtl">אתה והמחשב מנסים למצוא את המילה שבאמצע — ביחד!</p>
+                  <ul className="idle-screen__rules" dir="rtl">
+                    <li>🧠 חשבו על מילה שבאמצע בין שתי המילים</li>
+                    <li>🤫 אתם שולחים בו זמנית — לא רואים אחד את השני!</li>
+                    <li>🔄 הניחוש שלכם הופך לזוג החדש</li>
+                    <li>🏆 ניצחתם כשמגיעים לאותה מילה</li>
+                  </ul>
+                </>
+              ) : (
+                <>
+                  <h2 dir="ltr">Welcome! 👋</h2>
+                  <p dir="ltr">You and the computer try to find the word in the middle — together!</p>
+                  <ul className="idle-screen__rules" dir="ltr">
+                    <li>🧠 Think of a word that sits between the two given words</li>
+                    <li>🤫 You both submit at the same time — no peeking at each other's guess!</li>
+                    <li>🔄 Your guess becomes the new pair</li>
+                    <li>🏆 You win when you both land on the same word</li>
+                  </ul>
+                </>
+              )}
               <div className="idle-screen__lang-select">
                 <button
                   className={`btn btn--lang${selectedLang === "he" ? " active" : ""}`}
@@ -180,7 +203,8 @@ export default function App() {
           <WinScreen
             winMessage={lastRound.win_message}
             rounds={roundNum}
-            lastWord={lastRound.player_guess}
+            playerWord={lastRound.player_guess}
+            computerWord={lastRound.computer_guess}
             history={[...history, lastRound]}
             onNewGame={handleNewGame}
             language={lastRound.language}

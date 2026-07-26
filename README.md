@@ -50,8 +50,10 @@ cd .. && bash scripts/download_models.sh
 
 # Start the API (will parse + cache vectors on first run, ~2 min)
 cd backend
-MODEL_CACHE_DIR=/data/models uvicorn main:app --reload
+uvicorn main:app --reload
 ```
+
+`MODEL_CACHE_DIR` defaults to `~/.amtza/models` locally — matching where `download_models.sh` saves the vectors. Only set it explicitly in production (e.g. Railway's mounted volume, see Deployment below).
 
 The backend runs on http://localhost:8000. First startup downloads and parses the word vectors — subsequent starts load the cached `.npy` files in ~3 seconds.
 

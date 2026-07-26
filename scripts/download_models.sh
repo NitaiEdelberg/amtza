@@ -4,7 +4,7 @@
 
 set -e
 
-CACHE_DIR="${MODEL_CACHE_DIR:-/data/models}"
+CACHE_DIR="${MODEL_CACHE_DIR:-$HOME/.amtza/models}"
 mkdir -p "$CACHE_DIR"
 
 echo "📥 Downloading Hebrew wiki vectors (~1.2GB)..."
@@ -20,3 +20,4 @@ wget -c -q --show-progress \
 echo ""
 echo "✅ Done. Start the backend once to parse and cache as .npy files (~2 min):"
 echo "   cd backend && uvicorn main:app --reload"
+echo "   (MODEL_CACHE_DIR defaults to ~/.amtza/models — no env var needed locally)"
