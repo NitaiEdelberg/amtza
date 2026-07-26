@@ -34,10 +34,18 @@ spaces: Dict[str, EmbeddingSpace] = {}
 models_loaded = False
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+async def _load_models():
+    """Load (and on first boot, download + build) the embedding models.
+
+    Kept OFF the startup path: the first-ever boot downloads ~2.5GB of vectors
+    and builds the caches, which takes several minutes — far longer than a
+    platform health-check will wait. By loading in the background the app comes
+    up immediately, `/health` responds right away, and the game endpoints return
+    503 ("models still loading") until this finishes. Subsequent boots load the
+    cached .npy files in seconds.
+    """
     global models_loaded
-    logger.info("Loading embedding models...")
+    logger.info("Loading embedding models (background)...")
     loop = asyncio.get_event_loop()
     try:
         he_space, en_space = await asyncio.gather(
@@ -50,7 +58,13 @@ async def lifespan(app: FastAPI):
         logger.info("Both embedding models loaded successfully")
     except Exception as e:
         logger.error(f"Failed to load models: {e}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(_load_models())
     yield
+    task.cancel()
     spaces.clear()
 
 
