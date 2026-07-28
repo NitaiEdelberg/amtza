@@ -15,7 +15,10 @@
 5. Your word + the computer's word form the **new pair**
 6. Repeat until you both guess the same word — **you win!**
 
-The computer always plays the mathematical vector midpoint. The challenge is thinking like the algorithm.
+The computer plays the semantic midpoint, filtered to real, everyday words (it won't
+throw junk tokens, proper nouns, or grammatical fragments at you). The challenge is
+thinking like the algorithm. If you circle the same territory for a while, a gentle
+"homing" mechanism relaxes the match bar each round so every game converges.
 
 ---
 
@@ -66,6 +69,26 @@ npm run dev
 ```
 
 Open http://localhost:5173. The Vite proxy forwards API calls to `localhost:8000`.
+
+### Tests
+
+The backend's game logic — win detection, the homing-threshold decay, and the
+message tiers — has a unit-test suite that needs no models:
+
+```bash
+cd backend
+./venv/bin/python -m unittest discover -s test -v
+```
+
+### Performance & startup notes
+
+- **Fast guesses.** The word-quality filter is precomputed over the whole vocabulary
+  once at load and cached to disk (`{lang}_v3_good.npy`), so each `/guess` is just a
+  few vector dot products (~0.2s) rather than thousands of per-candidate lookups.
+- **Non-blocking startup.** Models load in a background task, so the app (and
+  `/health`) come up immediately. Game endpoints return `503` until the models
+  finish. The **first-ever** boot downloads ~2.5GB of vectors and builds the caches
+  (several minutes); every boot after that loads the cache in seconds.
 
 ---
 
