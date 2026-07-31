@@ -1,6 +1,20 @@
+---
+title: Amtza
+emoji: 🎯
+colorFrom: yellow
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # אמצע 🎯
 
 **A cooperative semantic word game** — you and the computer both try to find the word that sits *in the middle* of two given words. Your guesses form the next pair. Keep going until you both land on the same word.
+
+<!-- The YAML block above configures the Hugging Face Space that hosts the backend.
+     GitHub renders it as a small table; Hugging Face requires it. -->
+
 
 > *Inspired by the Israeli word game "אמצע" played between friends.*
 
@@ -98,20 +112,33 @@ The two halves deploy separately: a static frontend on a CDN, and the Python API
 on a box with real memory. **The backend cannot run on Netlify/Vercel** — it keeps
 ~350MB of word vectors resident, which serverless functions don't allow.
 
-### Backend — Railway (or any host with ≥1GB RAM)
+### Backend — Hugging Face Spaces (free)
 
-Measured requirements: **~500MB RAM** in steady state (both languages loaded) and
-**~400MB disk** for the parsed caches. A 512MB free tier is not enough; 1GB works.
+Measured requirements: **~500MB RAM** in steady state (both languages loaded).
+That rules out the common free tiers (Render free is 512MB and would OOM), but
+Hugging Face Spaces gives **2 vCPU / 16GB RAM free**, no card required — it's
+built for exactly this kind of model-backed service. The `Dockerfile` in the repo
+root is already Spaces-shaped (non-root user, port 7860).
 
-1. New Railway project → link this repo → set **root directory** to `backend`
-2. Add a **Volume** mounted at `/data` (1GB is plenty — the raw vectors are
-   streamed and never stored, only the parsed `.npy` caches persist)
-3. Environment variables:
-   - `MODEL_CACHE_DIR=/data/models`
-   - `ALLOWED_ORIGIN=https://your-site.netlify.app`  ← exact frontend origin, no trailing slash
-4. Deploy. The health check passes immediately (models load in a background task);
-   the game endpoints return `503` for the first ~2 minutes while the vectors
-   stream in and the caches build. Later restarts reuse the volume and take seconds.
+1. [huggingface.co/new-space](https://huggingface.co/new-space) → name it `amtza`,
+   pick **Docker → Blank**, visibility **Public** (free tier), create.
+2. Push this repo to the Space:
+   ```bash
+   git remote add hf https://huggingface.co/spaces/<your-username>/amtza
+   git push hf master:main
+   ```
+   (Authenticate with a token from huggingface.co/settings/tokens, `write` scope.)
+3. Once built, the API is at `https://<your-username>-amtza.hf.space`.
+4. Add `ALLOWED_ORIGIN=https://your-site.netlify.app` under the Space's
+   **Settings → Variables and secrets**.
+
+Boot takes ~2 minutes: `/health` answers immediately and the game endpoints return
+`503` while the vectors stream in. Free Spaces sleep after 48h idle and wake on the
+next visit. Storage is ephemeral, which is fine here — nothing is downloaded to
+disk, the vectors are streamed and parsed straight into memory.
+
+*(Paid alternative, if you ever want zero cold starts: Railway with a 1GB volume,
+`MODEL_CACHE_DIR=/data/models`, ~$5/mo — `railway.json` is already in the repo.)*
 
 ### Frontend — Netlify
 
