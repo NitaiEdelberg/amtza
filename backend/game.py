@@ -4,7 +4,14 @@ from typing import Optional
 
 import numpy as np
 
-WIN_THRESHOLD = 0.70
+# The real game is won when both sides say the SAME word. A similarity-based win is
+# a convergence aid, so the bar has to stay high enough that the two words are
+# genuinely interchangeable. Measured fastText cosines: mother/father 0.83,
+# brother/father 0.79, cat/dog 0.71, king/queen 0.71 — all *related opposites*, not
+# the same idea. At the old 0.70 bar every one of those "won", and the game then told
+# the player "you and the computer thought the same thing", which was simply untrue.
+# 0.85 keeps near-synonyms winning while related-but-different pairs keep playing.
+WIN_THRESHOLD = 0.85
 
 # "Homing" mechanism: nearest-neighbour midpoint search has no anchor to the original
 # pair, so a run of unlucky guesses can occasionally drift through a long chain of
@@ -13,9 +20,11 @@ WIN_THRESHOLD = 0.70
 # Past a grace period, gradually relax the win bar each round so every game is
 # guaranteed to converge in a bounded number of rounds — like two people who keep
 # circling back to the same general territory eventually just calling it a match.
-HOMING_GRACE_ROUNDS = 10
-HOMING_DECAY_PER_ROUND = 0.025
-HOMING_MIN_THRESHOLD = 0.50
+# The floor stays at 0.72: below that the two words are visibly different things and
+# declaring a match feels like the game giving up rather than converging.
+HOMING_GRACE_ROUNDS = 8
+HOMING_DECAY_PER_ROUND = 0.01
+HOMING_MIN_THRESHOLD = 0.72
 
 
 def _effective_threshold(round_num: int) -> float:
@@ -94,6 +103,21 @@ WIN_MESSAGES_EN = [
     "Boom! 💥 That's exactly the middle!",
 ]
 
+# Shown when the game ends on *similarity* rather than the identical word. These must
+# never claim the two words were the same — they say the words were close enough, and
+# name both, so the player can see exactly what happened.
+NEAR_WIN_MESSAGES_HE = [
+    "מספיק קרוב! 🎯 '{a}' ו'{b}' זה כמעט אותו דבר.",
+    "סגרנו! 🤝 '{a}' ו'{b}' — בעצם אותו רעיון.",
+    "כמעט מילה במילה! ✨ '{a}' מול '{b}' — נחשב!",
+]
+
+NEAR_WIN_MESSAGES_EN = [
+    "Close enough! 🎯 '{a}' and '{b}' are practically the same idea.",
+    "That'll do! 🤝 '{a}' vs '{b}' — near enough to call it.",
+    "Almost word for word! ✨ '{a}' and '{b}' — we'll take it.",
+]
+
 
 @dataclass
 class RoundResult:
@@ -140,9 +164,17 @@ def get_funny_message(similarity: float, lang: str, word1: str, word2: str) -> O
     return None
 
 
-def get_win_message(lang: str) -> str:
-    msgs = WIN_MESSAGES_HE if lang == "he" else WIN_MESSAGES_EN
-    return random.choice(msgs)
+def get_win_message(lang: str, exact: bool = True,
+                    player_word: str = "", computer_word: str = "") -> str:
+    """Win message. `exact` distinguishes a true same-word win from a similarity win.
+
+    Only an exact match may claim the two sides "thought the same thing" — a
+    similarity win names both words instead, so the message is always truthful.
+    """
+    if exact:
+        return random.choice(WIN_MESSAGES_HE if lang == "he" else WIN_MESSAGES_EN)
+    msgs = NEAR_WIN_MESSAGES_HE if lang == "he" else NEAR_WIN_MESSAGES_EN
+    return random.choice(msgs).format(a=player_word, b=computer_word)
 
 
 def build_round_result(
@@ -160,8 +192,13 @@ def build_round_result(
     computer_sim = float(np.dot(computer_vec, midpoint))
     player_computer_sim = float(np.dot(player_vec, computer_vec))
     is_won = check_win(player_guess, computer_guess, player_vec, computer_vec, round_num)
+    is_exact = player_guess.lower() == computer_guess.lower()
     funny_msg = None if is_won else get_funny_message(player_sim, lang, word1, word2)
-    win_msg = get_win_message(lang) if is_won else None
+    win_msg = (
+        get_win_message(lang, exact=is_exact,
+                        player_word=player_guess, computer_word=computer_guess)
+        if is_won else None
+    )
     return RoundResult(
         round_num=round_num,
         word1=word1,

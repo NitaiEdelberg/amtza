@@ -69,9 +69,21 @@ class TestCheckWin(unittest.TestCase):
         # Two vectors whose similarity sits between the floor and the full bar:
         # a loss during the grace period, a win once the threshold has decayed.
         v1 = unit(1, 0)
-        v2 = unit(0.6, 0.8)  # cosine 0.6 — below 0.70 bar, above 0.50 floor
+        v2 = unit(0.8, 0.6)  # cosine 0.8 — below the 0.85 bar, above the 0.72 floor
         self.assertFalse(check_win("a", "b", v1, v2, round_num=1))
         self.assertTrue(check_win("a", "b", v1, v2, round_num=40))
+
+    def test_related_but_different_words_do_not_win(self):
+        # Real fastText cosines for pairs that are clearly NOT the same idea:
+        # cat/dog 0.71, king/queen 0.71, brother/father 0.79. At the old 0.70 bar
+        # these all "won" and the game claimed both sides said the same thing.
+        v1 = unit(1, 0)
+        for cos in (0.71, 0.79):
+            v2 = unit(cos, (1 - cos ** 2) ** 0.5)
+            self.assertFalse(
+                check_win("brother", "father", v1, v2, round_num=1),
+                f"cosine {cos} should not win during the grace period",
+            )
 
 
 class TestMessages(unittest.TestCase):
@@ -93,6 +105,21 @@ class TestMessages(unittest.TestCase):
         self.assertIn(get_win_message("he"), __import__("game").WIN_MESSAGES_HE)
         self.assertIn(get_win_message("en"), __import__("game").WIN_MESSAGES_EN)
 
+    def test_near_win_message_names_both_words_and_never_claims_sameness(self):
+        # A similarity win must not tell the player they "thought the same thing" —
+        # it has to show both words. (Regression: brother/father won at the old 0.70
+        # bar and reported "You and the computer thought the same thing!")
+        msg = get_win_message("en", exact=False, player_word="brother", computer_word="father")
+        self.assertIn("brother", msg)
+        self.assertIn("father", msg)
+        self.assertNotIn("same thing", msg)
+
+    def test_near_win_message_hebrew_formats_both_words(self):
+        msg = get_win_message("he", exact=False, player_word="ערב", computer_word="לילה")
+        self.assertIn("ערב", msg)
+        self.assertIn("לילה", msg)
+        self.assertNotIn("{a}", msg)
+
 
 class TestBuildRoundResult(unittest.TestCase):
     def test_win_result_shape(self):
@@ -106,6 +133,20 @@ class TestBuildRoundResult(unittest.TestCase):
         self.assertIsNotNone(r.win_message)
         self.assertIsNone(r.funny_message)  # no nag on a win
         self.assertEqual(r.language, "en")
+
+    def test_similarity_win_uses_the_near_win_message(self):
+        # Different words that are close enough to win must get the honest
+        # "close enough, X vs Y" message, not the exact-match one.
+        v1 = unit(1, 0)
+        v2 = unit(0.99, 0.141)  # cosine ~0.99: a win, but not the same word
+        r = build_round_result(
+            round_num=1, word1="a", word2="b",
+            player_guess="brother", computer_guess="father",
+            player_vec=v1, computer_vec=v2, midpoint=v1, lang="en",
+        )
+        self.assertTrue(r.is_won)
+        self.assertIn("brother", r.win_message)
+        self.assertIn("father", r.win_message)
 
     def test_loss_result_has_funny_not_win(self):
         r = build_round_result(

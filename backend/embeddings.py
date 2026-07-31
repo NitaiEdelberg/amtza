@@ -165,6 +165,10 @@ _HE_PROPER_NOUN_BLOCKLIST = {
     # Adjective forms that read wrong as a noun answer (base too long for the
     # י-suffix filter's <=7-char rule)
     "פסיכיאטרי",     # "psychiatric" — was picked for רופא+חולה over פסיכולוג
+    # Proper nouns surfaced by the larger (140k) vocabulary: historical royalty and
+    # place/institution names that cluster around king/queen and sky/earth.
+    "איזבלה", "דריווש", "בלדווין", "אלינור", "מטילדה",
+    "סנהדרין", "אנטארקטיקה", "פלשתינה", "מסופוטמיה",
 }
 
 # A handful of unambiguous non-Hebrew-script signals: words containing Latin letters,
@@ -279,11 +283,11 @@ def _load_or_compute_good_mask(space: EmbeddingSpace, lang: str) -> None:
     """Attach space.good_mask, loading the disk cache when present else computing + saving it.
 
     Keyed to the v3 model version and validated against the current vocab length so a stale
-    cache (different vocabulary) is transparently recomputed. Cached file: {lang}_v6_good.npy.
-    The version suffix (v6) is bumped whenever the blocklists/filters change so a stale
+    cache (different vocabulary) is transparently recomputed. Cached file: {lang}_v8_good.npy.
+    The version suffix (v8) is bumped whenever the blocklists/filters change so a stale
     mask from a previous deploy is invalidated even when the vocab length is unchanged.
     """
-    mask_path = CACHE_DIR / f"{lang}_v6_good.npy"
+    mask_path = CACHE_DIR / f"{lang}_v8_good.npy"
     if mask_path.exists():
         try:
             mask = np.load(str(mask_path))
@@ -821,14 +825,19 @@ def _is_good_suggestion(word: str, space: "EmbeddingSpace | None" = None,
         # This blocks: וגן=ו+גן, ועם=ו+עם, העץ=ה+עץ, החי=ה+חי, etc.
         if word[0] in ("ו", "ה") and len(word) == 3 and word[1:] in space.word_to_idx:
             return False
-        if len(word) >= 4 and word[0] in _HE_PREFIXES_1 and word[1:] in space.word_to_idx:
-            return False
-        # 3-letter prefix forms (בים, לעץ, בחג, ביד, בדם…). The length>=4 rule above
-        # can't be relaxed to 3, because real words would be destroyed: מים=מ+ים,
-        # כלב=כ+לב, לחם=ל+חם, כפר=כ+פר. So decide semantically instead: a real
-        # prefixed form is nearly synonymous with its base, a real word is not.
-        if (len(word) == 3 and word[0] in _HE_PREFIXES_1
-                and word not in _HE_REAL_3CHAR_WORDS):
+        # Prefix forms (ב/כ/ל/ו/ש/מ/ה + base): בבית, לעיר, בים, לעץ, בחג…
+        #
+        # "base is in the vocabulary" alone is NOT sufficient evidence — with a
+        # 140k-word vocab, junk fragments like וקר/ילה/לום/דינה/לחמה are all present,
+        # so that test wrongly destroyed בוקר, לילה, שלום, מלחמה, מדינה, שמים, מלכה,
+        # שולחן, מורה — exactly the everyday words players reach for first.
+        #
+        # Decide semantically instead: a genuine prefixed form is near-synonymous with
+        # its base (בבית/בית 0.69, המים/מים 0.78, לעץ/עץ 0.69, בחג/חג 0.72 — measured
+        # minimum 0.46), while a real word that merely starts with a prefix letter is
+        # unrelated to the fragment behind it (בוקר/וקר 0.15, לילה/ילה 0.12,
+        # שלום/לום 0.20, מלחמה/לחמה 0.33 — measured maximum). 0.45 splits them.
+        if len(word) >= 3 and word[0] in _HE_PREFIXES_1 and word not in _HE_REAL_3CHAR_WORDS:
             base_idx = space.word_to_idx.get(word[1:])
             word_idx = space.word_to_idx.get(word)
             if base_idx is not None and word_idx is not None:
