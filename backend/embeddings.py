@@ -156,6 +156,15 @@ _HE_PROPER_NOUN_BLOCKLIST = {
     "פלוטו", "נפטון", "אורנוס", "אוריון",
     # Geographic/ethnonym proper nouns spotted in the holiday trap
     "אשכנז", "ירדן",
+    # Construct-state ("smichut") forms observed being PICKED in playtesting. The
+    # generic י-suffix filter only fires at length>=4 with a base <=7 chars, and a
+    # semantic rule doesn't separate these cleanly (real words מרי/צבי/גדי score as
+    # high as junk בתי/ימי), so the observed offenders are listed by name instead.
+    "עצי",           # "trees-of" — was picked for פרי+זית
+    "נישואי", "נישואיה", "נישואיהם",  # construct forms of נישואין (kept: נישואין/נישואים)
+    # Adjective forms that read wrong as a noun answer (base too long for the
+    # י-suffix filter's <=7-char rule)
+    "פסיכיאטרי",     # "psychiatric" — was picked for רופא+חולה over פסיכולוג
 }
 
 # A handful of unambiguous non-Hebrew-script signals: words containing Latin letters,
@@ -270,11 +279,11 @@ def _load_or_compute_good_mask(space: EmbeddingSpace, lang: str) -> None:
     """Attach space.good_mask, loading the disk cache when present else computing + saving it.
 
     Keyed to the v3 model version and validated against the current vocab length so a stale
-    cache (different vocabulary) is transparently recomputed. Cached file: {lang}_v4_good.npy.
-    The version suffix (v4) is bumped whenever the blocklists/filters change so a stale
+    cache (different vocabulary) is transparently recomputed. Cached file: {lang}_v6_good.npy.
+    The version suffix (v6) is bumped whenever the blocklists/filters change so a stale
     mask from a previous deploy is invalidated even when the vocab length is unchanged.
     """
-    mask_path = CACHE_DIR / f"{lang}_v4_good.npy"
+    mask_path = CACHE_DIR / f"{lang}_v6_good.npy"
     if mask_path.exists():
         try:
             mask = np.load(str(mask_path))
@@ -343,6 +352,28 @@ def is_valid_word(space: EmbeddingSpace, word: str) -> bool:
         return False
     return any(t in space.word_to_idx for t in tokens)
 
+
+# Real 3-letter Hebrew words that merely LOOK like prefix+2-letter-base and would
+# otherwise be caught by the semantic prefix rule below (see _HE_PREFIX_SIM_MAX).
+# All are perfectly good game words, so they're exempted by name.
+_HE_REAL_3CHAR_WORDS = {
+    "שכל",   # intellect  (looks like ש+כל)
+    "בצל",   # onion      (ב+צל)
+    "מדף",   # shelf      (מ+דף)
+    "כשר",   # kosher     (כ+שר)
+    "במה",   # stage      (ב+מה)
+    "שיש",   # marble     (ש+יש)
+    "מגל",   # sickle     (מ+גל)
+    "ממס",   # solvent    (מ+מס)
+    "שעם",   # cork       (ש+עם)
+}
+
+# A genuine prefixed form means almost the same thing as its base, so it sits very
+# close to it in embedding space (בים/ים = 0.50, לעץ/עץ = 0.69, בחג/חג = 0.72).
+# A real word that merely looks prefixed is semantically unrelated to its "base"
+# (כלב/לב = 0.18, מים/ים = 0.32, לחם/חם = 0.33, מזל/זל = 0.38 — the highest real
+# word measured). 0.45 leaves clear daylight between the two populations.
+_HE_PREFIX_SIM_MAX = 0.45
 
 _HE_PREFIXES_1 = set("בכלושמה")
 _HE_PREFIXES_2 = {"ול", "וב", "וכ", "ומ", "שב", "של", "שמ", "הב", "הכ", "המ", "וה", "לה", "בה"}
@@ -792,6 +823,17 @@ def _is_good_suggestion(word: str, space: "EmbeddingSpace | None" = None,
             return False
         if len(word) >= 4 and word[0] in _HE_PREFIXES_1 and word[1:] in space.word_to_idx:
             return False
+        # 3-letter prefix forms (בים, לעץ, בחג, ביד, בדם…). The length>=4 rule above
+        # can't be relaxed to 3, because real words would be destroyed: מים=מ+ים,
+        # כלב=כ+לב, לחם=ל+חם, כפר=כ+פר. So decide semantically instead: a real
+        # prefixed form is nearly synonymous with its base, a real word is not.
+        if (len(word) == 3 and word[0] in _HE_PREFIXES_1
+                and word not in _HE_REAL_3CHAR_WORDS):
+            base_idx = space.word_to_idx.get(word[1:])
+            word_idx = space.word_to_idx.get(word)
+            if base_idx is not None and word_idx is not None:
+                if float(np.dot(space.matrix[word_idx], space.matrix[base_idx])) >= _HE_PREFIX_SIM_MAX:
+                    return False
         # Prefix + internal noun + possessive ה: בבימויה = ב+בימוי+ה
         # Catches prefixed-possessive forms even when only the inner base is in vocab.
         if len(word) >= 5 and word[0] in _HE_PREFIXES_1 and word[-1] == "ה":
