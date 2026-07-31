@@ -143,6 +143,19 @@ _HE_PROPER_NOUN_BLOCKLIST = {
     "הלברשטאם", "הלברשטאט", "טייטלבוים",
     # Hellenistic-period dynasty/ethnonym adjective forms spotted in playtesting
     "הסלאוקית", "הסלווקית", "הפרתית", "התלמיית",
+    # Jewish holidays & religious-observance jargon (proper nouns). In playtesting,
+    # יום+ליל ("day"+"night") had the computer pick פסח, which collapsed the whole
+    # game into a holiday trap cluster (כיפור→שבת→חנוכה→חמץ). Blocking the holiday
+    # NAMES breaks the trap; ambiguous everyday words (צום "fast", שבת — also a
+    # starting-pair word) are deliberately left in.
+    "פסח", "כיפור", "חנוכה", "סוכות", "שבועות", "פורים", "תענית",
+    "חמץ", "מצה", "מצות", "סליחות", "הבדלה",
+    # Astronomy proper nouns (planets/constellations) that flood any pair touching
+    # sun/moon/star. Ambiguous ones are left in: צדק (=justice/Jupiter),
+    # נוגה (=glow/Venus), חמה (=sun, an everyday word).
+    "פלוטו", "נפטון", "אורנוס", "אוריון",
+    # Geographic/ethnonym proper nouns spotted in the holiday trap
+    "אשכנז", "ירדן",
 }
 
 # A handful of unambiguous non-Hebrew-script signals: words containing Latin letters,
@@ -257,9 +270,11 @@ def _load_or_compute_good_mask(space: EmbeddingSpace, lang: str) -> None:
     """Attach space.good_mask, loading the disk cache when present else computing + saving it.
 
     Keyed to the v3 model version and validated against the current vocab length so a stale
-    cache (different vocabulary) is transparently recomputed. Cached file: {lang}_v3_good.npy.
+    cache (different vocabulary) is transparently recomputed. Cached file: {lang}_v4_good.npy.
+    The version suffix (v4) is bumped whenever the blocklists/filters change so a stale
+    mask from a previous deploy is invalidated even when the vocab length is unchanged.
     """
-    mask_path = CACHE_DIR / f"{lang}_v3_good.npy"
+    mask_path = CACHE_DIR / f"{lang}_v4_good.npy"
     if mask_path.exists():
         try:
             mask = np.load(str(mask_path))

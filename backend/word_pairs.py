@@ -4,10 +4,10 @@ from typing import Optional, Dict
 STARTING_PAIRS = [
     # Hebrew pairs (all words verified in-vocab)
     {"word1": "שמש", "word2": "ירח", "language": "he"},
-    {"word1": "מנהיג", "word2": "גיבור", "language": "he"},
+    {"word1": "מלך", "word2": "חייל", "language": "he"},      # king+soldier → commander (מצביא)
     {"word1": "כלב", "word2": "חתול", "language": "he"},      # dog+cat → pet animal
     {"word1": "שבת", "word2": "קפה", "language": "he"},      # Shabbat+coffee → Israeli culture
-    {"word1": "אמא", "word2": "עבודה", "language": "he"},    # mom+work → balance
+    {"word1": "אמא", "word2": "ילד", "language": "he"},      # mom+child → girl/toddler (ילדה)
     {"word1": "חומוס", "word2": "פיצה", "language": "he"},  # hummus+pizza → food
     {"word1": "כסף", "word2": "אהבה", "language": "he"},    # money+love → life
     {"word1": "ילד", "word2": "זקן", "language": "he"},      # child+elder → life cycle
