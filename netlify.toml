@@ -1,0 +1,21 @@
+# Netlify hosts the React frontend on its CDN.
+#
+# IMPORTANT: the backend does NOT run here. It's a Python/FastAPI service that
+# holds ~350MB of fastText vectors in memory, which is far beyond what Netlify
+# Functions allow (short timeouts, small bundles, no persistent process). The
+# frontend talks to a backend hosted elsewhere via VITE_API_URL — set that in
+# Netlify's UI under Site settings -> Environment variables, e.g.
+#   VITE_API_URL = https://your-backend.up.railway.app
+# (no trailing slash). Rebuild after changing it: Vite inlines env vars at build
+# time, so a redeploy is required for a new value to take effect.
+
+[build]
+  base = "frontend"
+  command = "npm install && npm run build"
+  publish = "dist"
+
+# Single-page app: every route serves index.html so client-side routing works.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

@@ -565,30 +565,33 @@ def _filter_hebrew_forms(words: list, vectors: list) -> tuple:
     return kept_words, kept_vecs
 
 
-def _load_vec_file(path: str, max_words: int = MAX_WORDS, language: str = "en") -> tuple:
+def _parse_vec_stream(f, max_words: int = MAX_WORDS, language: str = "en") -> tuple:
+    """Parse a fastText .vec text stream (already decompressed, utf-8 decoded).
+
+    Stops after max_words lines, so a caller streaming straight from the network
+    can close the connection instead of pulling down the whole multi-GB file.
+    """
     words = []
     vectors = []
-    opener = gzip.open if str(path).endswith(".gz") else open
-    with opener(path, "rt", encoding="utf-8", errors="ignore") as f:
-        first_line = f.readline()  # skip "N dim" header
-        logger.info(f"Vec file header: {first_line.strip()}")
-        for i, line in enumerate(f):
-            if i >= max_words:
-                break
-            parts = line.rstrip().split(" ")
-            if len(parts) < 301:
-                continue
-            word = parts[0]
-            try:
-                vec = np.array(parts[1:301], dtype=np.float32)
-            except ValueError:
-                continue
-            if len(vec) != 300:
-                continue
-            words.append(word)
-            vectors.append(vec)
-            if i % 10_000 == 0 and i > 0:
-                logger.info(f"  Loaded {i:,} words...")
+    first_line = f.readline()  # skip "N dim" header
+    logger.info(f"Vec file header: {str(first_line).strip()}")
+    for i, line in enumerate(f):
+        if i >= max_words:
+            break
+        parts = line.rstrip().split(" ")
+        if len(parts) < 301:
+            continue
+        word = parts[0]
+        try:
+            vec = np.array(parts[1:301], dtype=np.float32)
+        except ValueError:
+            continue
+        if len(vec) != 300:
+            continue
+        words.append(word)
+        vectors.append(vec)
+        if i % 10_000 == 0 and i > 0:
+            logger.info(f"  Loaded {i:,} words...")
     logger.info(f"Loaded {len(words):,} words total")
 
     if language == "he":
@@ -599,6 +602,32 @@ def _load_vec_file(path: str, max_words: int = MAX_WORDS, language: str = "en") 
     norms = np.where(norms == 0, 1.0, norms)
     matrix /= norms
     return words, matrix
+
+
+def _load_vec_file(path: str, max_words: int = MAX_WORDS, language: str = "en") -> tuple:
+    opener = gzip.open if str(path).endswith(".gz") else open
+    with opener(path, "rt", encoding="utf-8", errors="ignore") as f:
+        return _parse_vec_stream(f, max_words, language)
+
+
+def _load_vec_url(url: str, max_words: int = MAX_WORDS, language: str = "en") -> tuple:
+    """Stream vectors straight from the URL, reading only the first max_words lines.
+
+    The published fastText files are far larger than we use (Hebrew is ~1.2GB /
+    488k words, English ~1.3GB gzipped / 2M words) but MAX_WORDS caps us at the
+    150k most frequent — which is all the game ever needs, since they're sorted by
+    frequency. Streaming and stopping early cuts the first-boot download from
+    ~2.5GB to a few hundred MB and needs no scratch disk at all, which is what
+    makes this deployable on a small box.
+    """
+    import io
+    import urllib.request
+
+    req = urllib.request.Request(url, headers={"User-Agent": "amtza/1.0"})
+    with urllib.request.urlopen(req) as resp:
+        raw = gzip.GzipFile(fileobj=resp) if url.endswith(".gz") else resp
+        text = io.TextIOWrapper(raw, encoding="utf-8", errors="ignore")
+        return _parse_vec_stream(text, max_words, language)
 
 
 def _build_space(words: list, matrix: np.ndarray, language: str) -> EmbeddingSpace:
@@ -665,21 +694,23 @@ def load_or_download_sync(lang: str) -> EmbeddingSpace:
         is_gz = url.endswith(".gz")
         raw_path = CACHE_DIR / (f"{lang}.vec.gz" if is_gz else f"{lang}.vec")
 
-        if not raw_path.exists():
-            logger.info(f"Downloading {lang} vectors ({url})...")
-            import urllib.request
-            urllib.request.urlretrieve(url, str(raw_path))
-            logger.info(f"Downloaded: {raw_path.stat().st_size // 1_048_576}MB")
-
-        logger.info(f"Parsing {lang} vectors...")
-        words, matrix = _load_vec_file(str(raw_path), MAX_WORDS, language=lang)
+        if raw_path.exists():
+            # A local copy (e.g. from scripts/download_models.sh) — parse it directly.
+            logger.info(f"Parsing {lang} vectors from {raw_path}...")
+            words, matrix = _load_vec_file(str(raw_path), MAX_WORDS, language=lang)
+        else:
+            # No local copy: stream from the network and stop at MAX_WORDS instead
+            # of downloading the whole multi-GB file to disk first.
+            logger.info(f"Streaming {lang} vectors ({url})...")
+            words, matrix = _load_vec_url(url, MAX_WORDS, language=lang)
 
         logger.info(f"Caching {lang} vectors as numpy arrays...")
         np.save(str(npy_path), matrix)
         with open(words_path, "wb") as f:
             pickle.dump(words, f)
-        raw_path.unlink()
-        logger.info(f"Cached and deleted raw file")
+        if raw_path.exists():
+            raw_path.unlink()
+            logger.info("Cached and deleted raw file")
 
     space = _build_space(words, matrix, lang)
     _load_or_compute_good_mask(space, lang)

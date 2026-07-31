@@ -94,23 +94,41 @@ cd backend
 
 ## Deployment
 
-### Railway (Backend)
+The two halves deploy separately: a static frontend on a CDN, and the Python API
+on a box with real memory. **The backend cannot run on Netlify/Vercel** — it keeps
+~350MB of word vectors resident, which serverless functions don't allow.
 
-1. Create a new Railway project, link this repo
-2. Set the **root directory** to `backend`
-3. Create a **Volume** and mount it at `/data`
-4. Add environment variables:
+### Backend — Railway (or any host with ≥1GB RAM)
+
+Measured requirements: **~500MB RAM** in steady state (both languages loaded) and
+**~400MB disk** for the parsed caches. A 512MB free tier is not enough; 1GB works.
+
+1. New Railway project → link this repo → set **root directory** to `backend`
+2. Add a **Volume** mounted at `/data` (1GB is plenty — the raw vectors are
+   streamed and never stored, only the parsed `.npy` caches persist)
+3. Environment variables:
    - `MODEL_CACHE_DIR=/data/models`
-   - `ALLOWED_ORIGIN=https://your-app.vercel.app`
-5. Deploy — first start downloads models (~5-10 min), then the health check passes
+   - `ALLOWED_ORIGIN=https://your-site.netlify.app`  ← exact frontend origin, no trailing slash
+4. Deploy. The health check passes immediately (models load in a background task);
+   the game endpoints return `503` for the first ~2 minutes while the vectors
+   stream in and the caches build. Later restarts reuse the volume and take seconds.
 
-### Vercel (Frontend)
+### Frontend — Netlify
 
-1. Import this repo on Vercel
-2. Set **root directory** to `frontend`
-3. Add environment variable:
-   - `VITE_API_URL=https://your-railway-app.railway.app`
-4. Deploy
+`netlify.toml` in the repo root already sets the base/build/publish and the SPA
+redirect, so there is nothing to configure by hand.
+
+1. Netlify → **Add new site → Import an existing project** → pick this repo
+2. Site settings → **Environment variables** → add
+   `VITE_API_URL = https://your-backend.up.railway.app` (no trailing slash)
+3. Deploy
+
+Vite inlines env vars at **build** time, so after changing `VITE_API_URL` you must
+trigger a redeploy for it to take effect.
+
+> Deploy the backend first — you need its URL for `VITE_API_URL`, and the backend
+> needs the Netlify URL for `ALLOWED_ORIGIN`. Set `ALLOWED_ORIGIN` once Netlify
+> gives you the site URL, then redeploy the frontend.
 
 ---
 
