@@ -17,29 +17,51 @@ export default function App() {
   const [selectedLang, setSelectedLang] = useState("he");
   const [usedWords, setUsedWords] = useState([]);
   const [guessError, setGuessError] = useState(null);
+  const [startError, setStartError] = useState(null);
+  const [bootSeconds, setBootSeconds] = useState(0);
+  const [bootUnreachable, setBootUnreachable] = useState(false);
+  const [bootAttempt, setBootAttempt] = useState(0); // bumping this restarts the poll
 
-  // Poll /health until models are loaded
+  // Poll /health until the models are ready.
+  //
+  // A hosted backend can be asleep (free tiers idle out), so the first visit may
+  // wait a couple of minutes: /health answers immediately but models_loaded stays
+  // false while the vectors stream in. We keep the player informed as that runs,
+  // and after repeated connection failures say so plainly instead of spinning
+  // forever behind a "loading models" message that isn't true.
   useEffect(() => {
     let cancelled = false;
+    let consecutiveErrors = 0;
+    const startedAt = Date.now();
+
     async function poll() {
+      let reachable = true;
       try {
         const health = await checkHealth();
         if (cancelled) return;
         if (health.models_loaded) {
+          setBootUnreachable(false);
           setGamePhase("idle");
-        } else {
-          setTimeout(poll, 2500);
+          return;
         }
+        consecutiveErrors = 0;
       } catch {
-        if (!cancelled) setTimeout(poll, 3000);
+        reachable = false;
+        consecutiveErrors += 1;
       }
+      if (cancelled) return;
+      setBootUnreachable(!reachable && consecutiveErrors >= 4);
+      setBootSeconds(Math.round((Date.now() - startedAt) / 1000));
+      setTimeout(poll, reachable ? 2500 : 3000);
     }
+
     poll();
     return () => { cancelled = true; };
-  }, []);
+  }, [bootAttempt]);
 
   async function startGame(lang) {
     setIsLoading(true);
+    setStartError(null);
     try {
       const pair = await getRandomPair(lang);
       setCurrentPair(pair);
@@ -51,6 +73,13 @@ export default function App() {
       setUsedWords([pair.word1, pair.word2]);
       setGuessError(null);
       setGamePhase("guessing");
+    } catch {
+      // Without this the button simply stopped spinning and nothing happened.
+      setStartError(
+        lang === "he"
+          ? "לא הצלחנו להתחיל משחק — בדקו את החיבור ונסו שוב."
+          : "Couldn't start a game — check your connection and try again."
+      );
     } finally {
       setIsLoading(false);
     }
@@ -132,13 +161,41 @@ export default function App() {
       <main className="app-main">
         {gamePhase === "loading" && (
           <div className="loading-screen">
-            <div className="loading-screen__spinner">⟳</div>
-            <p className="loading-screen__text">
-              {selectedLang === "he" ? "טוען מודלי שפה... ☕" : "Loading language models... ☕"}
-            </p>
-            <p className="loading-screen__sub">
-              {selectedLang === "he" ? "זה לוקח כדקה בפעם הראשונה" : "This takes about a minute the first time"}
-            </p>
+            {bootUnreachable ? (
+              <>
+                <div className="loading-screen__icon">🔌</div>
+                <p className="loading-screen__text">
+                  {selectedLang === "he" ? "אין חיבור לשרת" : "Can't reach the server"}
+                </p>
+                <p className="loading-screen__sub">
+                  {selectedLang === "he"
+                    ? "השרת אולי נרדם. אפשר לנסות שוב בעוד רגע."
+                    : "The server may be asleep. Give it a moment and try again."}
+                </p>
+                <button
+                  className="btn btn--primary"
+                  onClick={() => { setBootUnreachable(false); setBootAttempt((n) => n + 1); }}
+                >
+                  {selectedLang === "he" ? "נסו שוב" : "Try again"}
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="loading-screen__spinner">⟳</div>
+                <p className="loading-screen__text">
+                  {selectedLang === "he" ? "טוען מודלי שפה... ☕" : "Loading language models... ☕"}
+                </p>
+                <p className="loading-screen__sub">
+                  {bootSeconds > 25
+                    ? (selectedLang === "he"
+                        ? "מעירים את השרת — זה יכול לקחת עד שתי דקות בפעם הראשונה"
+                        : "Waking the server — this can take up to two minutes on a first visit")
+                    : (selectedLang === "he"
+                        ? "זה לוקח כדקה בפעם הראשונה"
+                        : "This takes about a minute the first time")}
+                </p>
+              </>
+            )}
           </div>
         )}
 
@@ -185,6 +242,9 @@ export default function App() {
               >
                 {selectedLang === "he" ? "בואו נשחק! 🎮" : "Let's Play! 🎮"}
               </button>
+              {startError && (
+                <p className="idle-screen__error" role="alert">{startError}</p>
+              )}
             </div>
           </div>
         )}
