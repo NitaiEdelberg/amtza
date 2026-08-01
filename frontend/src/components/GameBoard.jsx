@@ -19,6 +19,7 @@ export default function GameBoard({
   hintUsed,
   guessError,
   onClearGuessError,
+  onNewGame,
 }) {
   const isRevealing = gamePhase === "revealing";
   const isHe = currentPair?.language === "he";
@@ -67,6 +68,17 @@ export default function GameBoard({
                 {hintWords.join(" · ")}
               </span>
             )}
+            {/* An escape hatch. Most games land in ~5 rounds, but a measured 6%
+                run past 20, and until now the only way out of one was reloading
+                the page. Kept quiet so it doesn't invite quitting. */}
+            <button
+              className="btn btn--ghost game-board__restart"
+              onClick={onNewGame}
+              disabled={isLoading}
+              title={isHe ? "התחילו משחק חדש" : "Start a new game"}
+            >
+              {isHe ? "משחק חדש" : "New game"}
+            </button>
           </div>
         </>
       )}

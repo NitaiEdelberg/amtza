@@ -262,6 +262,7 @@ export default function App() {
             onGetHint={handleGetHint}
             guessError={guessError}
             onClearGuessError={() => setGuessError(null)}
+            onNewGame={handleNewGame}
             hintWords={hintWords}
             hintUsed={hintUsed}
           />

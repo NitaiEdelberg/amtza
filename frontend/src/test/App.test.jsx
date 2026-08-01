@@ -41,6 +41,29 @@ describe("App boot states", () => {
     expect(screen.getByRole("button", { name: /נסו שוב/ })).toBeInTheDocument();
   }, 25000);
 
+  it("lets a player abandon a long game without reloading the page", async () => {
+    // Measured: ~6% of games run past 20 rounds. Until this existed, the only way
+    // out of one was a page reload.
+    const user = userEvent.setup();
+    stubFetch((url) => {
+      const u = String(url);
+      if (u.includes("/health")) return ok({ status: "ok", models_loaded: true });
+      if (u.includes("/pair")) return ok({ word1: "fire", word2: "ice", language: "en" });
+      return ok({ valid: true, canonical: "", language: "en", in_vocab: true, suggestions: [] });
+    });
+    render(<App />);
+
+    // The welcome screen defaults to Hebrew; switch so the whole flow is English.
+    await user.click(await screen.findByRole("button", { name: /English/ }));
+    await user.click(screen.getByRole("button", { name: /Let's Play/ }));
+    // In a round now: the guess box is showing.
+    expect(await screen.findByRole("textbox")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /New game/ }));
+    // Back at the welcome screen, ready to start over.
+    expect(await screen.findByRole("button", { name: /Let's Play/ })).toBeInTheDocument();
+  });
+
   it("surfaces an error when starting a game fails", async () => {
     // Health is fine, but /pair fails — the Play button used to just stop
     // spinning with no explanation.

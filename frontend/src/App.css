@@ -663,3 +663,27 @@ body {
 }
 
 .loading-screen__icon { font-size: 2.5rem; }
+
+/* Quiet escape hatch from a long game — present but not competing with Hint. */
+.game-board__restart {
+  font-size: 0.85rem;
+  padding: 0.35rem 0.9rem;
+  opacity: 0.7;
+}
+.game-board__restart:not(:disabled):hover { opacity: 1; }
+
+/* Last-resort screen when a render error escapes — better than a blank page. */
+.error-boundary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  min-height: 100vh;
+  padding: 2rem;
+  text-align: center;
+  color: var(--text);
+}
+.error-boundary__emoji { font-size: 3rem; }
+.error-boundary h2 { font-size: 1.5rem; font-weight: 700; }
+.error-boundary p { color: var(--text2); max-width: 32rem; }
