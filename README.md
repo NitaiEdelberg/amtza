@@ -96,13 +96,19 @@ cd backend
 
 ### Performance & startup notes
 
-- **Fast guesses.** The word-quality filter is precomputed over the whole vocabulary
-  once at load and cached to disk (`{lang}_v3_good.npy`), so each `/guess` is just a
-  few vector dot products (~0.2s) rather than thousands of per-candidate lookups.
-- **Non-blocking startup.** Models load in a background task, so the app (and
-  `/health`) come up immediately. Game endpoints return `503` until the models
-  finish. The **first-ever** boot downloads ~2.5GB of vectors and builds the caches
-  (several minutes); every boot after that loads the cache in seconds.
+- **Fast guesses (~20ms).** Two things make that possible. The word-quality filter
+  is precomputed over the whole vocabulary once at load and cached to disk
+  (`{lang}_v8_good.npy` — the version suffix is bumped whenever the filters change,
+  so a stale mask can never survive a deploy). And the nearest-neighbour search is
+  a single matmul: every vector is L2-normalised, so a dot product *is* the cosine,
+  which is ~30x faster than the equivalent scikit-learn query at this vocabulary
+  size. A hint costs ~26ms, since it also computes the answer in order to avoid
+  giving it away.
+- **Non-blocking startup (~2 min, once).** Models load in a background task, so the
+  app and `/health` come up immediately; game endpoints return `503` until they
+  finish. On a first boot the vectors are **streamed** and parsed on the fly, stopping
+  at the 150k most frequent words rather than downloading the full ~2.5GB — no
+  scratch disk needed. Every boot after that loads the cached `.npy` files in seconds.
 
 ---
 
