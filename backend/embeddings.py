@@ -1069,6 +1069,23 @@ def _is_good_suggestion(word: str, space: "EmbeddingSpace | None" = None,
     return True
 
 
+def _nearest_indices(space: EmbeddingSpace, vec: np.ndarray, n: int) -> np.ndarray:
+    """Indices of the `n` nearest words to `vec`, closest first.
+
+    Equivalent to the NearestNeighbors cosine query — every row of `matrix` and
+    `vec` itself are L2-normalised, so a dot product *is* the cosine — but a single
+    matmul plus argpartition avoids the estimator's per-call overhead, which
+    dominated once the Hebrew vocabulary doubled to ~140k words.
+    """
+    n = min(n, len(space.words))
+    sims = space.matrix @ vec
+    if n < len(sims):
+        top = np.argpartition(-sims, n - 1)[:n]
+    else:
+        top = np.arange(len(sims))
+    return top[np.argsort(-sims[top])]
+
+
 def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set) -> str:
     """Find the best middle word using min-similarity scoring: min(sim(w,w1), sim(w,w2)).
     This maximises the *weaker* connection, ensuring the result is genuinely balanced
@@ -1094,7 +1111,7 @@ def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set
     else:
         base_n = 1200
     n_candidates = min(base_n + len(exclude), len(space.words))
-    _, indices = space.nn_index.kneighbors([midpoint], n_neighbors=n_candidates)
+    indices = _nearest_indices(space, midpoint, n_candidates)
 
     # When the pair is already very similar (converging), relax ceiling; otherwise tighten
     # to prevent words glued to one cluster.
@@ -1110,7 +1127,7 @@ def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set
         MIN_FLOOR = 0.17
 
     best_word, best_score = None, -1.0
-    for idx in indices[0]:
+    for idx in indices:
         word = space.words[idx]
         if word in exclude or not _is_good_idx(space, idx):
             continue
@@ -1128,7 +1145,7 @@ def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set
 
     if best_word is None:
         # Fallback 1: drop ceiling, keep adaptive floor
-        for idx in indices[0]:
+        for idx in indices:
             word = space.words[idx]
             if word in exclude or not _is_good_idx(space, idx):
                 continue
@@ -1140,7 +1157,7 @@ def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set
 
     if best_word is None:
         # Fallback 2: absolute minimum — any word related to at least one endpoint
-        for idx in indices[0]:
+        for idx in indices:
             word = space.words[idx]
             if word in exclude or not _is_good_idx(space, idx):
                 continue
@@ -1174,11 +1191,11 @@ def get_hints(space: EmbeddingSpace, word1: str, word2: str, n_hints: int = 3) -
     # Pool sized generously: the quality filters reject most candidates, and a pair
     # in a sparse region could otherwise return fewer than n_hints words.
     n_pool = min(600 + len(exclude), len(space.words))
-    _, indices = space.nn_index.kneighbors([midpoint], n_neighbors=n_pool)
+    indices = _nearest_indices(space, midpoint, n_pool)
     hints = []
     seen_normalized = set()
     rank = 0
-    for idx in indices[0]:
+    for idx in indices:
         word = space.words[idx]
         if word in exclude or not _is_good_idx(space, idx):
             continue
