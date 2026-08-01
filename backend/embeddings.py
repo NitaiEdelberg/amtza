@@ -1154,11 +1154,26 @@ def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set
 
 
 def get_hints(space: EmbeddingSpace, word1: str, word2: str, n_hints: int = 3) -> list:
-    """Return hint words (ranks 5-8 near midpoint, skipping top 4 to not give away the answer).
-    Uses a larger pool (300) because strict quality filters reject many candidates."""
+    """Return hint words near the midpoint that are NOT the computer's own answer.
+
+    Skipping the first few neighbours is not enough on its own: find_best_middle
+    scores candidates by min(sim_w1, sim_w2) with floors and a ceiling, so its pick
+    is often *not* the nearest neighbour and used to land squarely in the hint band
+    — measured at 7 of 33 starting pairs (sun+moon -> sunset, coffee+sleep -> drink,
+    city+forest -> park). A hint that hands over the answer isn't a hint, so the
+    answer is excluded explicitly.
+    """
     midpoint = compute_midpoint(space, word1, word2)
     exclude = _phrase_tokens(space, word1) | _phrase_tokens(space, word2)
-    n_pool = min(300 + len(exclude), len(space.words))
+    try:
+        answer = find_best_middle(space, word1, word2, exclude=set(exclude))
+        if answer:
+            exclude = exclude | {normalize_word(answer, space.language)}
+    except WordNotFoundError:
+        pass  # no answer to protect; fall through to plain nearest-neighbour hints
+    # Pool sized generously: the quality filters reject most candidates, and a pair
+    # in a sparse region could otherwise return fewer than n_hints words.
+    n_pool = min(600 + len(exclude), len(space.words))
     _, indices = space.nn_index.kneighbors([midpoint], n_neighbors=n_pool)
     hints = []
     seen_normalized = set()
