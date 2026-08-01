@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from embeddings import (
     EmbeddingSpace,
@@ -101,7 +101,9 @@ class GuessRequest(BaseModel):
     word1: str
     word2: str
     player_guess: str
-    round_num: int = 1
+    # The win bar relaxes as the round number climbs, so it has to be a real round
+    # number — an out-of-range value would silently hand out the easiest threshold.
+    round_num: int = Field(default=1, ge=1, le=500)
     used_words: List[str] = []
 
 
@@ -113,6 +115,21 @@ async def guess(req: GuessRequest):
     if lang not in spaces:
         raise HTTPException(500, f"No embedding space for language: {lang}")
     space = spaces[lang]
+
+    # Same gate the UI checks against, so /guess can't be more permissive than
+    # /validate. Without it "12345" was a playable guess: Common Crawl carries it
+    # as a token, so it has a vector even though it is plainly not a word.
+    if not is_valid_word(space, req.player_guess):
+        raise HTTPException(
+            422,
+            detail={
+                "error": "not_a_word",
+                "message": "הניחוש חייב להיות מילה" if lang == "he"
+                           else "Your guess needs to be a word",
+                "word": req.player_guess,
+                "suggestions": [],
+            },
+        )
 
     # normalize_word preserves spaces so multi-word phrases stay intact ("אייל גולן" → "אייל גולן")
     player_canonical = normalize_word(req.player_guess, lang)
