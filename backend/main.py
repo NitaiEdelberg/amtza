@@ -21,6 +21,7 @@ from embeddings import (
     load_or_download_sync,
     normalize_word,
     phrase_vec,
+    suggest_similar,
     _phrase_tokens,
 )
 from game import build_round_result
@@ -118,6 +119,10 @@ async def guess(req: GuessRequest):
     try:
         player_vec = phrase_vec(space, player_canonical)
     except WordNotFoundError:
+        # Offer the spellings the model does know rather than a dead end — the most
+        # common failure is Hebrew full/defective spelling (בוקר vs בקר), not a
+        # genuinely unknown word.
+        suggestions = suggest_similar(space, req.player_guess)
         raise HTTPException(
             422,
             detail={
@@ -125,6 +130,7 @@ async def guess(req: GuessRequest):
                 "message": f"המילה '{req.player_guess}' לא נמצאה במילון" if lang == "he"
                            else f"Word '{req.player_guess}' not found in vocabulary",
                 "word": req.player_guess,
+                "suggestions": suggestions,
             },
         )
 
@@ -202,7 +208,17 @@ async def validate(word: str):
     space = spaces[lang]
     canonical = normalize_word(word, lang)
     valid = is_valid_word(space, word)
-    return {"valid": valid, "canonical": canonical, "language": lang}
+    # `valid` is a permissive spell-check; a word can pass it and still have no
+    # vector. Report that separately so the UI can warn *before* the player commits
+    # to a guess, and offer alternatives it does know.
+    in_vocab = any(t in space.word_to_idx for t in canonical.split())
+    return {
+        "valid": valid,
+        "canonical": canonical,
+        "language": lang,
+        "in_vocab": in_vocab,
+        "suggestions": [] if in_vocab else suggest_similar(space, word),
+    }
 
 
 class HintRequest(BaseModel):

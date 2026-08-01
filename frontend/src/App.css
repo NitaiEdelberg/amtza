@@ -265,8 +265,13 @@ body {
   transition: border-color 0.2s;
 }
 .guess-input__field input:focus { border-color: var(--blue); }
+/* The JSX emits BEM modifiers (guess-input__field--valid); the plain .valid /
+   .invalid forms are kept so older markup still styles correctly. */
+.guess-input__field--valid input,
 .guess-input__field.valid input { border-color: var(--green); }
+.guess-input__field--invalid input,
 .guess-input__field.invalid input { border-color: var(--red); }
+.guess-input__field--warn input { border-color: var(--orange); }
 
 .guess-input__icon,
 .guess-input__spinner {
@@ -280,6 +285,43 @@ body {
 .guess-input__spinner { animation: spin 1s linear infinite; color: var(--text2); }
 
 .guess-input__status { font-size: 0.85rem; color: var(--red); }
+.guess-input__status--warn { color: var(--orange); }
+
+/* Rejected-guess feedback, shown inline instead of a browser alert(). */
+.guess-input__error {
+  font-size: 0.9rem;
+  color: var(--red);
+  background: rgba(255, 107, 107, 0.08);
+  border: 1px solid rgba(255, 107, 107, 0.25);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+  margin: 0;
+}
+
+.guess-input__suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+.guess-input__suggestions-label { color: var(--text2); }
+.guess-input__suggestion {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.9rem;
+  padding: 0.25rem 0.75rem;
+  transition: border-color 0.2s, color 0.2s;
+}
+.guess-input__suggestion:hover,
+.guess-input__suggestion:focus-visible {
+  border-color: var(--blue);
+  color: var(--blue);
+}
 
 .game-board__hint-row {
   display: flex;

@@ -3,8 +3,16 @@ const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 async function handleResponse(res) {
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Network error" }));
-    const message = typeof err.detail === "object" ? err.detail.message : err.detail;
-    throw new Error(message || `HTTP ${res.status}`);
+    const detail = err.detail;
+    const isObj = detail && typeof detail === "object";
+    const message = isObj ? detail.message : detail;
+    const error = new Error(message || `HTTP ${res.status}`);
+    // Keep the structured parts so the UI can react — notably `suggestions`,
+    // which turns "word not found" from a dead end into something clickable.
+    error.status = res.status;
+    error.code = isObj ? detail.error : undefined;
+    error.suggestions = (isObj && detail.suggestions) || [];
+    throw error;
   }
   return res.json();
 }

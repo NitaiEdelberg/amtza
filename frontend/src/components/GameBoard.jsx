@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import WordPair from "./WordPair";
 import GuessInput from "./GuessInput";
 import RevealCard from "./RevealCard";
@@ -17,6 +17,8 @@ export default function GameBoard({
   onGetHint,
   hintWords,
   hintUsed,
+  guessError,
+  onClearGuessError,
 }) {
   const isRevealing = gamePhase === "revealing";
   const isHe = currentPair?.language === "he";
@@ -41,10 +43,13 @@ export default function GameBoard({
       {gamePhase === "guessing" && (
         <>
           <GuessInput
+            key={`${currentPair.word1}|${currentPair.word2}`}
             onSubmit={onGuess}
             disabled={isRevealing}
             currentPair={currentPair}
             isLoading={isLoading}
+            error={guessError}
+            onClearError={onClearGuessError}
           />
           <div className="game-board__hint-row">
             <button

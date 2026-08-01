@@ -717,6 +717,106 @@ def load_or_download_sync(lang: str) -> EmbeddingSpace:
     return space
 
 
+def _spelling_variants(word: str) -> list:
+    """Plausible respellings of a Hebrew word.
+
+    Hebrew is written both "full" (ktiv male) and "defective" (ktiv haser): the
+    mater lectionis ו and י are optionally written, so a player types בוקר while
+    the corpus may hold בקר, or types שלחן where the corpus has שולחן. Rather than
+    tell them the word doesn't exist, offer the spelling the model actually knows.
+    Returns candidates in a stable order; the caller filters to real vocabulary.
+    """
+    seen = {word}
+    out = []
+
+    def add(v):
+        if v and v not in seen:
+            seen.add(v)
+            out.append(v)
+
+    for i, c in enumerate(word):          # drop an optional vowel letter
+        if c in "וי":
+            add(word[:i] + word[i + 1:])
+    for i in range(1, len(word)):         # add one
+        for c in "וי":
+            add(word[:i] + c + word[i:])
+    add(word + "ה")                        # common feminine/absolute ending
+    if word.endswith("ה"):
+        add(word[:-1])
+    return out
+
+
+def suggest_similar(space: EmbeddingSpace, word: str, limit: int = 3) -> list:
+    """Words in the vocabulary a player probably meant, best first.
+
+    Two passes: exact spelling variants (the common Hebrew case), then a cheap
+    edit-distance-1 scan restricted to words of a similar length that share a first
+    letter — enough to catch a typo without scanning 140k words character by
+    character. Ranked by corpus frequency (vocabulary is frequency-ordered), so the
+    most familiar word is offered first.
+    """
+    canonical = normalize_word(word, space.language)
+    if not canonical:
+        return []
+
+    hits = []
+    if space.language == "he":
+        # A word typed with a medial letter where the corpus stores the final form
+        # (חלונ -> חלון) is a plain miss, so check that before anything else.
+        candidates = [_with_final(canonical)] + _spelling_variants(canonical)
+        for v in candidates:
+            for form in (v, _with_final(v)):
+                idx = space.word_to_idx.get(form)
+                if idx is not None and form != canonical:
+                    hits.append((idx, form))
+
+    if not hits:
+        n = len(canonical)
+        for cand, idx in space.word_to_idx.items():
+            if abs(len(cand) - n) > 1 or not cand or cand[0] != canonical[0]:
+                continue
+            if cand != canonical and _edit_distance_within_1(canonical, cand):
+                hits.append((idx, cand))
+                if len(hits) > 40:  # plenty to rank; stop scanning
+                    break
+
+    hits.sort(key=lambda t: t[0])  # lower index == more frequent
+    out, seen = [], set()
+    for _, w in hits:
+        if w not in seen:
+            seen.add(w)
+            out.append(w)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _edit_distance_within_1(a: str, b: str) -> bool:
+    """True if `a` and `b` differ by at most one insert/delete/substitute."""
+    if a == b:
+        return True
+    la, lb = len(a), len(b)
+    if abs(la - lb) > 1:
+        return False
+    if la == lb:                      # at most one substitution
+        diffs = sum(1 for x, y in zip(a, b) if x != y)
+        return diffs <= 1
+    if la > lb:                       # ensure a is the shorter one
+        a, b, la, lb = b, a, lb, la
+    i = j = 0
+    skipped = False
+    while i < la and j < lb:          # one deletion from the longer string
+        if a[i] != b[j]:
+            if skipped:
+                return False
+            skipped = True
+            j += 1
+            continue
+        i += 1
+        j += 1
+    return True
+
+
 def get_word_vector(space: EmbeddingSpace, word: str) -> "np.ndarray | None":
     canonical = normalize_word(word, space.language)
     idx = space.word_to_idx.get(canonical)

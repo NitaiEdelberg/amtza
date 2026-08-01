@@ -16,6 +16,7 @@ export default function App() {
   const [hintUsed, setHintUsed] = useState(false);
   const [selectedLang, setSelectedLang] = useState("he");
   const [usedWords, setUsedWords] = useState([]);
+  const [guessError, setGuessError] = useState(null);
 
   // Poll /health until models are loaded
   useEffect(() => {
@@ -48,6 +49,7 @@ export default function App() {
       setHintWords([]);
       setHintUsed(false);
       setUsedWords([pair.word1, pair.word2]);
+      setGuessError(null);
       setGamePhase("guessing");
     } finally {
       setIsLoading(false);
@@ -56,6 +58,7 @@ export default function App() {
 
   async function handleGuess(playerGuess) {
     setIsLoading(true);
+    setGuessError(null);
     try {
       const result = await submitGuess(
         currentPair.word1,
@@ -67,7 +70,9 @@ export default function App() {
       setLastRound(result);
       setGamePhase("revealing");
     } catch (err) {
-      alert(err.message);
+      // Shown inline next to the input (with any alternative spellings the
+      // backend knows) rather than in a browser alert() the player must dismiss.
+      setGuessError({ message: err.message, suggestions: err.suggestions || [] });
     } finally {
       setIsLoading(false);
     }
@@ -92,6 +97,7 @@ export default function App() {
     setRoundNum((n) => n + 1);
     setHintWords([]);
     setHintUsed(false);
+    setGuessError(null);
     setGamePhase("guessing");
   }
 
@@ -194,6 +200,8 @@ export default function App() {
             onNextRound={handleNextRound}
             isLoading={isLoading}
             onGetHint={handleGetHint}
+            guessError={guessError}
+            onClearGuessError={() => setGuessError(null)}
             hintWords={hintWords}
             hintUsed={hintUsed}
           />
