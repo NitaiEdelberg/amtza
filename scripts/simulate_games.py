@@ -26,7 +26,8 @@ import numpy as np
 
 from embeddings import (
     WordNotFoundError,
-    _is_good_suggestion,
+    _is_good_idx,
+    _nearest_indices,
     _phrase_tokens,
     find_best_middle,
     get_word_vector,
@@ -34,7 +35,8 @@ from embeddings import (
     normalize_word,
     phrase_vec,
 )
-from game import check_win, _effective_threshold
+from game import (check_win, _effective_threshold, WIN_THRESHOLD,
+                  HOMING_GRACE_ROUNDS, HOMING_DECAY_PER_ROUND, HOMING_MIN_THRESHOLD)
 from word_pairs import STARTING_PAIRS
 
 
@@ -49,12 +51,15 @@ def simulated_player_guess(space, word1, word2, exclude, rng, pool_size=20, top_
     midpoint = midpoint.astype(np.float32)
 
     n_candidates = min(400, len(space.words))
-    _, indices = space.nn_index.kneighbors([midpoint], n_neighbors=n_candidates)
+    # Same fast paths the game itself uses: a matmul for the neighbour search and
+    # the precomputed quality mask. Calling _is_good_suggestion per candidate here
+    # re-ran the expensive contamination k-NN and made simulation unusably slow.
+    indices = _nearest_indices(space, midpoint, n_candidates)
 
     candidates = []
-    for idx in indices[0]:
+    for idx in indices:
         word = space.words[idx]
-        if word in exclude or not _is_good_suggestion(word, space):
+        if word in exclude or not _is_good_idx(space, idx):
             continue
         w_vec = space.matrix[idx]
         s1 = float(np.dot(w_vec, v1))
@@ -193,7 +198,11 @@ def main():
             print(f"  {w1:>12} + {w2:<12}  avg={avg:5.1f}  max={max(valid) if valid else '-':>3}  fails={n_fail}/{len(rs)}")
 
     print("\n=== PRODUCTION (homing curve) ===")
-    report("homing curve (grace=10, decay=0.025/round, floor=0.50)", lambda trace: rounds_to_converge(trace))
+    # Label read from the live constants — a hardcoded one silently goes stale
+    # the moment the win bar is retuned.
+    report(f"homing curve (bar={WIN_THRESHOLD}, grace={HOMING_GRACE_ROUNDS}, "
+           f"decay={HOMING_DECAY_PER_ROUND}/round, floor={HOMING_MIN_THRESHOLD})",
+           lambda trace: rounds_to_converge(trace))
 
     if thresholds:
         print("\n=== FLAT-THRESHOLD COMPARISON (pre-homing behaviour) ===")
