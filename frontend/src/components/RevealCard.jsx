@@ -32,17 +32,15 @@ export default function RevealCard({ playerGuess, computerGuess, proximity, lang
   const [showProximity, setShowProximity] = useState(false);
   const [barWidth, setBarWidth] = useState(0);
 
+  // Staged reveal: flip, then the proximity read-out, then the bar. No reset
+  // branch is needed: GameBoard mounts this only while revealing, so each round
+  // starts from a fresh mount with the initial state already in place.
   useEffect(() => {
-    if (visible) {
-      const t1 = setTimeout(() => setFlipped(true), 100);
-      const t2 = setTimeout(() => setShowProximity(true), 900);
-      const t3 = setTimeout(() => setBarWidth(Math.max(4, Math.round((proximity ?? 0) * 100))), 1000);
-      return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
-    } else {
-      setFlipped(false);
-      setShowProximity(false);
-      setBarWidth(0);
-    }
+    if (!visible) return;
+    const t1 = setTimeout(() => setFlipped(true), 100);
+    const t2 = setTimeout(() => setShowProximity(true), 900);
+    const t3 = setTimeout(() => setBarWidth(Math.max(4, Math.round((proximity ?? 0) * 100))), 1000);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, [visible, proximity]);
 
   if (!visible) return null;

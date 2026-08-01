@@ -23,13 +23,13 @@ function getLabel(pct, lang) {
 export default function SimilarityMeter({ similarity, lang, visible }) {
   const [width, setWidth] = useState(0);
 
+  // The bar animates from 0 after a beat. No reset branch is needed: GameBoard
+  // mounts this only while revealing, so a new round arrives as a fresh mount
+  // with width already 0.
   useEffect(() => {
-    if (visible) {
-      const t = setTimeout(() => setWidth(Math.max(5, Math.round(similarity * 100))), 700);
-      return () => clearTimeout(t);
-    } else {
-      setWidth(0);
-    }
+    if (!visible) return;
+    const t = setTimeout(() => setWidth(Math.max(5, Math.round(similarity * 100))), 700);
+    return () => clearTimeout(t);
   }, [visible, similarity]);
 
   if (!visible) return null;

@@ -12,8 +12,7 @@ function useDebounce(value, delay) {
 
 export default function GuessInput({ onSubmit, disabled, currentPair, isLoading, error, onClearError }) {
   const [value, setValue] = useState("");
-  const [validation, setValidation] = useState(null); // null | {valid, canonical, in_vocab, suggestions}
-  const [validating, setValidating] = useState(false);
+  const [validation, setValidation] = useState(null); // null | {word, valid, canonical, in_vocab, suggestions}
   const inputRef = useRef(null);
   const debouncedValue = useDebounce(value, 300);
 
@@ -35,16 +34,17 @@ export default function GuessInput({ onSubmit, disabled, currentPair, isLoading,
     inputRef.current?.focus();
   }
 
+  // Each result is tagged with the word it describes. Responses can land out of
+  // order (or after the player has typed on), and acting on a stale one would
+  // enable Submit for a word the server never approved.
   useEffect(() => {
-    if (debouncedValue.length < 2) {
-      setValidation(null);
-      return;
-    }
-    setValidating(true);
-    validateWord(debouncedValue)
-      .then((res) => setValidation(res))
-      .catch(() => setValidation({ valid: false }))
-      .finally(() => setValidating(false));
+    const word = debouncedValue.trim();
+    if (word.length < 2) return;
+    let cancelled = false;
+    validateWord(word)
+      .then((res) => { if (!cancelled) setValidation({ ...res, word }); })
+      .catch(() => { if (!cancelled) setValidation({ valid: false, word }); });
+    return () => { cancelled = true; };
   }, [debouncedValue]);
 
   const isHebrew = currentPair?.language === "he";
@@ -52,10 +52,16 @@ export default function GuessInput({ onSubmit, disabled, currentPair, isLoading,
     currentPair?.word1?.toLowerCase(),
     currentPair?.word2?.toLowerCase(),
   ];
-  const isSameAsPair = validation?.canonical && pairWords.includes(validation.canonical.toLowerCase());
+  // Only trust a result that describes exactly what's in the box right now.
+  const checked = validation?.word === value.trim() ? validation : null;
+  // Derived rather than stored: we're waiting exactly while the debounced word is
+  // long enough to check but has no matching result yet.
+  const validating =
+    debouncedValue.trim().length >= 2 && validation?.word !== debouncedValue.trim();
+  const isSameAsPair = checked?.canonical && pairWords.includes(checked.canonical.toLowerCase());
   const canSubmit =
     !disabled && !isLoading && value.trim().length > 0 &&
-    validation?.valid && !isSameAsPair;
+    checked?.valid && !isSameAsPair;
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -69,21 +75,21 @@ export default function GuessInput({ onSubmit, disabled, currentPair, isLoading,
     if (isSameAsPair) {
       statusClass = "invalid";
       statusMsg = isHebrew ? "המילה כבר בזוג הנוכחי" : "Word already in current pair";
-    } else if (validation?.valid === false) {
+    } else if (checked?.valid === false) {
       statusClass = "invalid";
       statusMsg = isHebrew ? "המילה לא נמצאה במילון 🤔" : "Word not found in dictionary 🤔";
-    } else if (validation?.in_vocab === false) {
+    } else if (checked?.in_vocab === false) {
       // Spelled plausibly, but the model has no vector for it — warn now rather
       // than letting the player submit and get rejected.
       statusClass = "warn";
       statusMsg = isHebrew ? "המילה לא במילון של המשחק" : "Not in the game's dictionary";
-    } else if (validation?.valid === true) {
+    } else if (checked?.valid === true) {
       statusClass = "valid";
     }
   }
 
   // Alternatives worth offering: from the live check, or from a rejected submit.
-  const suggestions = (error?.suggestions?.length ? error.suggestions : validation?.suggestions) || [];
+  const suggestions = (error?.suggestions?.length ? error.suggestions : checked?.suggestions) || [];
   const showSuggestions = suggestions.length > 0 && (statusClass === "warn" || error);
 
   return (

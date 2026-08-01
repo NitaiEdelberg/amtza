@@ -87,6 +87,24 @@ describe("GuessInput", () => {
     expect(onClearError).toHaveBeenCalled();
   });
 
+  it("ignores a validation result that no longer matches the input", async () => {
+    const user = userEvent.setup();
+    // The server approves "בוקר", but by the time it answers the player has
+    // typed something else. Submit must not be enabled off that stale approval.
+    stubValidate({ valid: true, canonical: "בוקר", language: "he", in_vocab: true, suggestions: [] });
+    render(<GuessInput onSubmit={() => {}} currentPair={hebrewPair} />);
+
+    const box = screen.getByRole("textbox");
+    await user.type(box, "בוקר");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /שלח ניחוש/ })).toBeEnabled()
+    );
+
+    // Keep typing; the held result describes the earlier word only.
+    await user.type(box, "ים");
+    expect(screen.getByRole("button", { name: /שלח ניחוש/ })).toBeDisabled();
+  });
+
   it("starts empty for a new round (GameBoard remounts it via key)", async () => {
     const user = userEvent.setup();
     const { rerender } = render(
