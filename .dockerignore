@@ -1,0 +1,33 @@
+# Keep the build context small and the image clean.
+#
+# Without this, `docker build` uploads the whole working tree to the daemon —
+# including backend/venv (~281MB of a local, machine-specific virtualenv built
+# for a different Python than the image) and frontend/node_modules. None of it is
+# needed: the image installs dependencies from requirements.txt, and the frontend
+# is deployed separately to a CDN.
+
+# Local Python environments and caches
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# The frontend is a separate deploy target (Netlify)
+frontend/
+
+# Model files — streamed at boot, never baked into the image
+*.vec
+*.vec.gz
+*.npy
+*.pkl
+
+# Repo/tooling noise
+.git/
+.github/
+.gitignore
+scripts/
+*.md
+.vscode/
+.idea/
+.DS_Store
