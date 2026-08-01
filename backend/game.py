@@ -22,6 +22,13 @@ WIN_THRESHOLD = 0.85
 # circling back to the same general territory eventually just calling it a match.
 # The floor stays at 0.72: below that the two words are visibly different things and
 # declaring a match feels like the game giving up rather than converging.
+#
+# Measured over 330 simulated games (scripts/simulate_games.py, 10 per starting
+# pair, 60-round cap): 327/330 converge, median 5 rounds, p95 22, 6.1% run past 20.
+# Loosening to decay=0.015 / floor=0.65 was tried and rejected — it moved the
+# median not at all and the long tail barely (6.1% -> 5.5%, still the same 3
+# stragglers), while accepting word pairs *less* alike than cat/dog (0.708). The
+# tail comes from games genuinely wandering, not from the floor being too high.
 HOMING_GRACE_ROUNDS = 8
 HOMING_DECAY_PER_ROUND = 0.01
 HOMING_MIN_THRESHOLD = 0.72

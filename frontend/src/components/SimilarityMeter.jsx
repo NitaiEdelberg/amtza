@@ -44,7 +44,14 @@ export default function SimilarityMeter({ similarity, lang, visible }) {
         <span className="similarity-meter__score">{pct}%</span>
         <span>{label}</span>
       </div>
-      <div className="similarity-meter__track">
+      <div
+        className="similarity-meter__track"
+        role="progressbar"
+        aria-valuenow={pct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={lang === "he" ? "קרבה לאמצע" : "Closeness to the middle"}
+      >
         <div
           className="similarity-meter__fill"
           style={{ width: `${width}%`, backgroundColor: getColor(pct) }}

@@ -102,6 +102,8 @@ export default function GuessInput({ onSubmit, disabled, currentPair, isLoading,
           type="text"
           value={value}
           onChange={handleChange}
+          // A placeholder is not an accessible name — it disappears on input.
+          aria-label={isHebrew ? "הניחוש שלכם" : "Your guess"}
           placeholder={isHebrew ? "כתבו מילה..." : "type a word..."}
           disabled={disabled || isLoading}
           autoComplete="off"
