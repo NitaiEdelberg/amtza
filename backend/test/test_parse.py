@@ -162,5 +162,73 @@ class TestSimilarityHelpers(unittest.TestCase):
         self.assertEqual(E._row(self._space(m), 2).dtype, np.float32)
 
 
+class TestNearestGoodIndices(unittest.TestCase):
+    """The search hot path. It returns positions into `words`, not into the submatrix.
+
+    Getting that mapping wrong would not raise — it would silently return the wrong
+    words, which is the failure mode these tests exist to catch.
+    """
+
+    def _space(self, n=200, good=None):
+        rng = np.random.default_rng(9)
+        m = rng.standard_normal((n, 300)).astype(np.float32)
+        m /= np.linalg.norm(m, axis=1, keepdims=True)
+        words = [f"w{i}" for i in range(n)]
+        sp = E.EmbeddingSpace(
+            words=words, word_to_idx={w: i for i, w in enumerate(words)},
+            matrix=m.astype(E._STORE_DTYPE), nn_index=None, language="en",
+            good_mask=np.array([i in good for i in range(n)]) if good is not None
+            else np.ones(n, dtype=bool))
+        E._build_good_submatrix(sp)
+        return sp
+
+    def test_returned_indices_address_the_full_vocabulary(self):
+        # Only a sparse, non-contiguous set is playable, so submatrix position and
+        # vocabulary index cannot coincide by accident.
+        good = {5, 40, 41, 130, 199}
+        sp = self._space(good=good)
+        got = set(int(i) for i in E._nearest_good_indices(sp, _unit(sp, 40), 5))
+        self.assertEqual(got, good)
+
+    def test_a_word_is_its_own_nearest(self):
+        good = {3, 17, 88, 150}
+        sp = self._space(good=good)
+        nearest = E._nearest_good_indices(sp, _unit(sp, 88), 1)
+        self.assertEqual(int(nearest[0]), 88)
+
+    def test_unplayable_words_are_never_returned(self):
+        sp = self._space(good={1, 2, 3})
+        got = E._nearest_good_indices(sp, _unit(sp, 50), 50)
+        self.assertTrue(set(int(i) for i in got).issubset({1, 2, 3}))
+        self.assertEqual(len(got), 3, "asking for more than exist must not pad or repeat")
+
+    def test_results_are_sorted_nearest_first(self):
+        sp = self._space()
+        vec = _unit(sp, 7)
+        got = E._nearest_good_indices(sp, vec, 20)
+        sims = [float(np.dot(E._row(sp, int(i)), vec)) for i in got]
+        self.assertEqual(sims, sorted(sims, reverse=True))
+
+    def test_it_matches_a_full_scan_restricted_to_good_words(self):
+        good = set(range(0, 200, 7))
+        sp = self._space(good=good)
+        vec = _unit(sp, 13)
+        fast = [int(i) for i in E._nearest_good_indices(sp, vec, 10)]
+        full = [int(i) for i in E._nearest_indices(sp, vec, 200) if int(i) in good][:10]
+        self.assertEqual(fast, full)
+
+    def test_it_falls_back_when_no_submatrix_was_built(self):
+        # Test fixtures elsewhere construct spaces by hand and never call
+        # _build_good_submatrix; those must keep working.
+        sp = self._space()
+        sp.good_matrix = None
+        sp.good_indices = None
+        self.assertEqual(len(E._nearest_good_indices(sp, _unit(sp, 4), 5)), 5)
+
+
+def _unit(space, idx):
+    return E._row(space, idx)
+
+
 if __name__ == "__main__":
     unittest.main()

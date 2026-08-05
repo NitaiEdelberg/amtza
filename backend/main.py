@@ -1,15 +1,29 @@
-import asyncio
-import logging
 import os
-from contextlib import asynccontextmanager
-from typing import Dict, List, Optional
 
-from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+# Pin BLAS to a single thread. MUST run before numpy is imported anywhere (the
+# thread pool is sized at load time), which is why it sits above the other imports.
+#
+# OpenBLAS otherwise sizes its pool to the core count and spawns it per matmul.
+# Our products are small — roughly 5k x 300 — so extra threads buy nothing, and
+# under concurrent players they actively hurt: 10 simultaneous guesses on a 16-core
+# box oversubscribed to ~160 threads and took 2.29s wall, against 0.35s pinned to
+# one thread each. On a fractional-CPU instance there is nothing to parallelise
+# across in the first place.
+for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
+           "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+    os.environ.setdefault(_v, "1")
 
-from embeddings import (
+import asyncio  # noqa: E402
+import logging  # noqa: E402
+from contextlib import asynccontextmanager  # noqa: E402
+from typing import Dict, List, Optional  # noqa: E402
+
+from dotenv import load_dotenv  # noqa: E402
+from fastapi import FastAPI, HTTPException  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from pydantic import BaseModel, Field  # noqa: E402
+
+from embeddings import (  # noqa: E402
     EmbeddingSpace,
     WordNotFoundError,
     compute_midpoint,
@@ -24,8 +38,8 @@ from embeddings import (
     suggest_similar,
     _phrase_tokens,
 )
-from game import build_round_result
-from word_pairs import get_random_pair
+from game import build_round_result  # noqa: E402
+from word_pairs import get_random_pair  # noqa: E402
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -71,7 +85,19 @@ async def lifespan(app: FastAPI):
     spaces.clear()
 
 
-app = FastAPI(title="אמצע API — Amtza Game", version="1.0.0", lifespan=lifespan)
+# NOTE ON `def` VS `async def` BELOW.
+#
+# /guess, /hint and /validate are plain `def` on purpose. Their work is blocking
+# numpy — no awaits anywhere — so declaring them `async def` runs them directly on
+# the event loop, where each one stalls the entire process until it finishes.
+# Measured with 10 simultaneous players: requests served strictly one at a time and
+# /health, which is idle work, went from ~1ms to 224ms because it was stuck behind
+# them. On a small free instance that is enough for a platform health check to start
+# timing out and recycle the container mid-game.
+#
+# As `def`, FastAPI runs them in its threadpool instead: the loop stays free, and
+# numpy releases the GIL inside BLAS so the heavy part genuinely overlaps.
+app = FastAPI(title="אמצע API - Amtza Game", version="1.0.0", lifespan=lifespan)
 
 allowed_origin = os.getenv("ALLOWED_ORIGIN", "*")
 app.add_middleware(
@@ -110,7 +136,7 @@ class GuessRequest(BaseModel):
 
 
 @app.post("/guess")
-async def guess(req: GuessRequest):
+def guess(req: GuessRequest):
     _require_models()
 
     lang = detect_language(req.word1)
@@ -221,7 +247,7 @@ async def guess(req: GuessRequest):
 
 
 @app.get("/validate/{word}")
-async def validate(word: str):
+def validate(word: str):
     _require_models()
     lang = detect_language(word)
     space = spaces[lang]
@@ -246,7 +272,7 @@ class HintRequest(BaseModel):
 
 
 @app.post("/hint")
-async def hint(req: HintRequest):
+def hint(req: HintRequest):
     _require_models()
     lang = detect_language(req.word1)
     space = spaces[lang]

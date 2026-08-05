@@ -77,8 +77,8 @@ export default function App() {
       // Without this the button simply stopped spinning and nothing happened.
       setStartError(
         lang === "he"
-          ? "לא הצלחנו להתחיל משחק — בדקו את החיבור ונסו שוב."
-          : "Couldn't start a game — check your connection and try again."
+          ? "לא הצלחנו להתחיל משחק. בדקו את החיבור ונסו שוב."
+          : "Couldn't start a game. Check your connection and try again."
       );
     } finally {
       setIsLoading(false);
@@ -188,8 +188,8 @@ export default function App() {
                 <p className="loading-screen__sub">
                   {bootSeconds > 25
                     ? (selectedLang === "he"
-                        ? "מעירים את השרת — זה יכול לקחת עד שתי דקות בפעם הראשונה"
-                        : "Waking the server — this can take up to two minutes on a first visit")
+                        ? "מעירים את השרת. זה יכול לקחת עד שתי דקות בפעם הראשונה"
+                        : "Waking the server. This can take up to two minutes on a first visit")
                     : (selectedLang === "he"
                         ? "זה לוקח כדקה בפעם הראשונה"
                         : "This takes about a minute the first time")}
@@ -205,10 +205,10 @@ export default function App() {
               {selectedLang === "he" ? (
                 <>
                   <h2 dir="rtl">ברוכים הבאים! 👋</h2>
-                  <p dir="rtl">אתה והמחשב מנסים למצוא את המילה שבאמצע — ביחד!</p>
+                  <p dir="rtl">אתה והמחשב מנסים למצוא את המילה שבאמצע, ביחד!</p>
                   <ul className="idle-screen__rules" dir="rtl">
                     <li>🧠 חשבו על מילה שבאמצע בין שתי המילים</li>
-                    <li>🤫 אתם שולחים בו זמנית — לא רואים אחד את השני!</li>
+                    <li>🤫 אתם שולחים בו זמנית, לא רואים אחד את השני!</li>
                     <li>🔄 הניחוש שלכם הופך לזוג החדש</li>
                     <li>🏆 ניצחתם כשמגיעים לאותה מילה</li>
                   </ul>
@@ -216,10 +216,10 @@ export default function App() {
               ) : (
                 <>
                   <h2 dir="ltr">Welcome! 👋</h2>
-                  <p dir="ltr">You and the computer try to find the word in the middle — together!</p>
+                  <p dir="ltr">You and the computer try to find the word in the middle, together!</p>
                   <ul className="idle-screen__rules" dir="ltr">
                     <li>🧠 Think of a word that sits between the two given words</li>
-                    <li>🤫 You both submit at the same time — no peeking at each other's guess!</li>
+                    <li>🤫 You both submit at the same time, no peeking at each other's guess!</li>
                     <li>🔄 Your guess becomes the new pair</li>
                     <li>🏆 You win when you both land on the same word</li>
                   </ul>
