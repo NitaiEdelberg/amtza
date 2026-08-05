@@ -49,12 +49,14 @@ async def _load_models():
     logger.info("Loading embedding models (background)...")
     loop = asyncio.get_event_loop()
     try:
-        he_space, en_space = await asyncio.gather(
-            loop.run_in_executor(None, load_or_download_sync, "he"),
-            loop.run_in_executor(None, load_or_download_sync, "en"),
-        )
-        spaces["he"] = he_space
-        spaces["en"] = en_space
+        # Sequentially, NOT via asyncio.gather. Parsing a language transiently needs
+        # ~2x its final size, and running both at once stacks those peaks — enough to
+        # be OOM-killed in a 512MB container even though the steady state fits
+        # comfortably. Loading one at a time costs a little wall-clock on first boot
+        # and nothing at all afterwards, since each language is then already cached.
+        for lang in ("he", "en"):
+            spaces[lang] = await loop.run_in_executor(None, load_or_download_sync, lang)
+            logger.info(f"{lang} model ready")
         models_loaded = True
         logger.info("Both embedding models loaded successfully")
     except Exception as e:

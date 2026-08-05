@@ -1,0 +1,40 @@
+# Render Blueprint for the amtza backend.
+#
+# Why Render and not Hugging Face Spaces: Spaces moved Docker/Gradio behind a paid
+# plan (only Static Spaces remain free), and a Static Space cannot run Python.
+# Render's free web service still gives a real long-lived container.
+#
+# The constraint that shapes everything here is 512MB of RAM. The embedding matrices
+# are stored at float16 and the two languages load one after the other rather than
+# concurrently, which puts the peak around 350MB — see the comments in
+# backend/embeddings.py for the measurements.
+#
+# Deploy: Render dashboard -> New -> Blueprint -> pick this repo.
+services:
+  - type: web
+    name: amtza-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    # /health answers 200 immediately, while the models are still loading in the
+    # background. That is deliberate: a health check that waited for the vectors
+    # would time out and Render would kill the instance before it ever came up.
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      # Free instances have no persistent disk; /tmp is writable and lives as long
+      # as the instance does, which is all the cache needs to be useful.
+      - key: MODEL_CACHE_DIR
+        value: /tmp/amtza-models
+      # Set these two in the dashboard (marked sync:false so they are not stored here):
+      #   ALLOWED_ORIGIN      — the Netlify site URL, exact origin, no trailing slash
+      #   PREBUILT_CACHE_URL  — optional; a GitHub Release URL holding the prebuilt
+      #                         caches, which cuts cold starts from minutes to seconds.
+      #                         See scripts/publish_model_cache.sh.
+      - key: ALLOWED_ORIGIN
+        sync: false
+      - key: PREBUILT_CACHE_URL
+        sync: false

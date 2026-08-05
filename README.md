@@ -12,8 +12,9 @@ pinned: false
 
 **A cooperative semantic word game** — you and the computer both try to find the word that sits *in the middle* of two given words. Your guesses form the next pair. Keep going until you both land on the same word.
 
-<!-- The YAML block above configures the Hugging Face Space that hosts the backend.
-     GitHub renders it as a small table; Hugging Face requires it. -->
+<!-- The YAML block above is Hugging Face Space metadata, kept in case the backend
+     is ever hosted there. It is inert on GitHub, which renders it as a small table.
+     The live backend runs on Render — see Deployment. -->
 
 
 > *Inspired by the Israeli word game "אמצע" played between friends.*
@@ -43,7 +44,7 @@ thinking like the algorithm. If you circle the same territory for a while, a gen
 | Backend | Python FastAPI + fastText word embeddings (300d) |
 | Embeddings | Facebook/Meta fastText — Hebrew (wiki) + English (Common Crawl) |
 | Frontend | React 19 + Vite + framer-motion |
-| Deployment | Railway (backend) + Vercel (frontend) |
+| Deployment | Render (backend) + Netlify (frontend) |
 
 ---
 
@@ -70,7 +71,7 @@ cd backend
 uvicorn main:app --reload
 ```
 
-`MODEL_CACHE_DIR` defaults to `~/.amtza/models` locally — matching where `download_models.sh` saves the vectors. Only set it explicitly in production (e.g. Railway's mounted volume, see Deployment below).
+`MODEL_CACHE_DIR` defaults to `~/.amtza/models` locally — matching where `download_models.sh` saves the vectors. Only set it explicitly in production (see Deployment below).
 
 The backend runs on http://localhost:8000. First startup downloads and parses the word vectors — subsequent starts load the cached `.npy` files in ~3 seconds.
 
@@ -118,33 +119,47 @@ The two halves deploy separately: a static frontend on a CDN, and the Python API
 on a box with real memory. **The backend cannot run on Netlify/Vercel** — it keeps
 ~350MB of word vectors resident, which serverless functions don't allow.
 
-### Backend — Hugging Face Spaces (free)
+### Backend — Render (free)
 
-Measured requirements: **~500MB RAM** in steady state (both languages loaded).
-That rules out the common free tiers (Render free is 512MB and would OOM), but
-Hugging Face Spaces gives **2 vCPU / 16GB RAM free**, no card required — it's
-built for exactly this kind of model-backed service. The `Dockerfile` in the repo
-root is already Spaces-shaped (non-root user, port 7860).
+**Memory is the whole story.** Both languages resident used to cost ~500MB, which
+is over the 512MB a free container gets. Three changes brought the peak to ~350MB:
 
-1. [huggingface.co/new-space](https://huggingface.co/new-space) → name it `amtza`,
-   pick **Docker → Blank**, visibility **Public** (free tier), create.
-2. Push this repo to the Space:
-   ```bash
-   git remote add hf https://huggingface.co/spaces/<your-username>/amtza
-   git push hf master:main
-   ```
-   (Authenticate with a token from huggingface.co/settings/tokens, `write` scope.)
-3. Once built, the API is at `https://<your-username>-amtza.hf.space`.
-4. Add `ALLOWED_ORIGIN=https://your-site.netlify.app` under the Space's
-   **Settings → Variables and secrets**.
+| | before | after |
+|---|---|---|
+| Matrix storage | float32, 348MB | **float16, 174MB** |
+| Fresh parse peak | 398MB (list + `vstack`) | **226MB** (one preallocated buffer, rows normalised inline) |
+| Language loading | both at once (`asyncio.gather`) | **one after the other** |
 
-Boot takes ~2 minutes: `/health` answers immediately and the game endpoints return
-`503` while the vectors stream in. Free Spaces sleep after 48h idle and wake on the
-next visit. Storage is ephemeral, which is fine here — nothing is downloaded to
-disk, the vectors are streamed and parsed straight into memory.
+Half precision is safe here because every dot product still accumulates in float32:
+the resulting cosine is accurate to ~7e-4, and the computer's pick was **identical on
+all 33 starting pairs** in both languages. See `_STORE_DTYPE` in `backend/embeddings.py`.
 
-*(Paid alternative, if you ever want zero cold starts: Railway with a 1GB volume,
-`MODEL_CACHE_DIR=/data/models`, ~$5/mo — `railway.json` is already in the repo.)*
+1. Render → **New → Blueprint** → pick this repo. `render.yaml` sets the runtime,
+   build/start commands and health check, so there is nothing to fill in.
+2. Once it is live the API is at `https://<service-name>.onrender.com`.
+3. Add `ALLOWED_ORIGIN=https://your-site.netlify.app` under **Environment**
+   (exact origin, no trailing slash).
+
+`/health` answers `200` immediately and reports `models_loaded`; the game endpoints
+return `503` until the vectors are in. Free instances sleep after 15 minutes idle.
+
+**Cold starts:** free instances have no persistent disk, so by default every wake-up
+re-streams ~670MB of raw vectors and recomputes the good-word masks — minutes. To
+avoid that, publish the finished caches (178MB) once and point the service at them:
+
+```bash
+./scripts/publish_model_cache.sh          # uploads to a GitHub Release
+# then set on Render:
+PREBUILT_CACHE_URL=https://github.com/<you>/amtza/releases/download/models-v1
+```
+
+Optional but strongly recommended — it is the difference between a wake-up measured
+in minutes and one measured in seconds. `.github/workflows/keep-alive.yml` in the
+sibling repo shows the cron trick for keeping the instance warm during the day.
+
+*Not Hugging Face Spaces:* Spaces now requires a paid plan for anything that runs
+compute (Gradio/Docker); only Static Spaces are free, and those cannot run Python.
+The `Dockerfile` is still here and still correct if you ever want a container host.
 
 ### Frontend — Netlify
 
@@ -153,7 +168,7 @@ redirect, so there is nothing to configure by hand.
 
 1. Netlify → **Add new site → Import an existing project** → pick this repo
 2. Site settings → **Environment variables** → add
-   `VITE_API_URL = https://your-backend.up.railway.app` (no trailing slash)
+   `VITE_API_URL = https://<service-name>.onrender.com` (no trailing slash)
 3. Deploy
 
 Vite inlines env vars at **build** time, so after changing `VITE_API_URL` you must

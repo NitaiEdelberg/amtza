@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
-from sklearn.neighbors import NearestNeighbors
 
 logger = logging.getLogger(__name__)
 
@@ -20,13 +19,59 @@ VEC_URLS = {
 
 MAX_WORDS = 150_000
 
+# The matrix is stored at half precision and upcast to float32 in small slices
+# wherever it is actually used. At float32 the two vocabularies need 348MB
+# resident (150k EN + 140k HE rows x 300 dims x 4B), which does not fit in the
+# 512MB a free container gives you once Python, numpy and uvicorn are in there
+# too. float16 halves that to 174MB.
+#
+# Precision is a non-issue here: each stored component carries ~4.9e-4 relative
+# error, and since every dot product still *accumulates* in float32 the
+# resulting cosine is accurate to ~7e-4 — three orders of magnitude below the
+# 0.01-per-round granularity of the win threshold, and invisible in a score
+# rendered as a whole percentage.
+_STORE_DTYPE = np.float16
+
+# Rows upcast per matmul slice. 20k x 300 x 4B = 24MB transient, which is the
+# whole point: `matrix @ vec` on a float16 matrix would otherwise make numpy
+# promote the *entire* array first and undo the saving at the worst moment.
+_SIM_CHUNK = 20_000
+
+
+def _row(space: "EmbeddingSpace", idx: int) -> np.ndarray:
+    """One embedding row as float32.
+
+    Always go through this rather than indexing `space.matrix` directly: a raw
+    float16 row would make `np.dot` accumulate 300 terms in half precision,
+    which is lossy enough to move a similarity score in the second decimal.
+    """
+    return space.matrix[idx].astype(np.float32)
+
+
+def _sims_all(space: "EmbeddingSpace", vec: np.ndarray) -> np.ndarray:
+    """Cosine similarity of `vec` against every word, as float32.
+
+    Rows and `vec` are L2-normalised, so the dot product is the cosine. Done in
+    slices so the float16 -> float32 promotion never materialises a full copy of
+    the matrix.
+    """
+    matrix = space.matrix
+    vec = np.asarray(vec, dtype=np.float32)
+    if matrix.dtype == np.float32:
+        return matrix @ vec
+    out = np.empty(matrix.shape[0], dtype=np.float32)
+    for start in range(0, matrix.shape[0], _SIM_CHUNK):
+        end = start + _SIM_CHUNK
+        out[start:end] = matrix[start:end].astype(np.float32) @ vec
+    return out
+
 
 @dataclass
 class EmbeddingSpace:
     words: list
     word_to_idx: dict
-    matrix: np.ndarray  # shape (N, 300), L2-normalized, float32
-    nn_index: NearestNeighbors
+    matrix: np.ndarray  # shape (N, 300), L2-normalized, float16 (see _STORE_DTYPE)
+    nn_index: object  # unused; retained so existing test fixtures keep constructing
     language: str
     noun_proto: "np.ndarray | None" = None  # prototype vector for Hebrew nouns
     verb_proto: "np.ndarray | None" = None  # prototype vector for Hebrew verbs/adjectives
@@ -195,8 +240,8 @@ def _is_neighbor_contaminated(word: str, space: EmbeddingSpace, k: int = 10, rat
     idx = space.word_to_idx.get(word)
     if idx is None:
         return False
-    _, indices = space.nn_index.kneighbors([space.matrix[idx]], n_neighbors=k + 1)
-    neighbors = [space.words[i] for i in indices[0] if space.words[i] != word][:k]
+    indices = _nearest_indices(space, _row(space, idx), k + 1)
+    neighbors = [space.words[i] for i in indices if space.words[i] != word][:k]
     if not neighbors:
         space._contamination_cache[word] = False
         return False
@@ -207,7 +252,7 @@ def _is_neighbor_contaminated(word: str, space: EmbeddingSpace, k: int = 10, rat
 
 
 def _batch_contamination_flags(space: EmbeddingSpace, cand_indices: "np.ndarray",
-                               k: int = 10, ratio: float = 0.3, chunk: int = 2000) -> dict:
+                               k: int = 10, ratio: float = 0.3, chunk: int = 128) -> dict:
     """Vectorised equivalent of calling _is_neighbor_contaminated() on each candidate.
 
     Instead of one k-NN query per word (~1000s of brute-force scans per /guess, the
@@ -216,6 +261,11 @@ def _batch_contamination_flags(space: EmbeddingSpace, cand_indices: "np.ndarray"
     per-word function would. Returns {idx: bool}. The neighbour selection (exclude self by
     word string, take first k, ratio > 0.3) mirrors _is_neighbor_contaminated exactly so
     the set of contaminated words is unchanged.
+
+    `chunk` is deliberately small. The intermediate `sims` is (chunk, N) float32,
+    so the old value of 2000 allocated 1.2GB against a 150k vocabulary — survivable
+    on a laptop, fatal in a 512MB container, and reached on exactly the boot where
+    no cached good_mask exists yet. At 128 the same array is 77MB.
     """
     words = space.words
     matrix = space.matrix
@@ -223,7 +273,14 @@ def _batch_contamination_flags(space: EmbeddingSpace, cand_indices: "np.ndarray"
     K = k + 1  # match kneighbors(n_neighbors=k+1)
     for start in range(0, len(cand_indices), chunk):
         ci = cand_indices[start:start + chunk]
-        sims = matrix[ci] @ matrix.T  # (c, N) cosine sims (matrix is L2-normalised)
+        # (c, N) cosine sims (matrix is L2-normalised). `matrix.T` inside `@` would
+        # promote the whole float16 array to float32 in one go, so upcast the small
+        # side once and walk the large one in slices.
+        rows = matrix[ci].astype(np.float32)
+        sims = np.empty((len(ci), matrix.shape[0]), dtype=np.float32)
+        for cstart in range(0, matrix.shape[0], _SIM_CHUNK):
+            cend = cstart + _SIM_CHUNK
+            sims[:, cstart:cend] = rows @ matrix[cstart:cend].astype(np.float32).T
         # top-K by similarity per row (unsorted), then sort those K descending
         top = np.argpartition(-sims, kth=K - 1, axis=1)[:, :K]
         row_sims = np.take_along_axis(sims, top, axis=1)
@@ -539,15 +596,19 @@ def _build_pos_prototypes(word_to_idx: dict, matrix: np.ndarray, lang: str = "he
     return np_arr, vp_arr
 
 
-def _filter_hebrew_forms(words: list, vectors: list) -> tuple:
-    """Remove suffix-possessive Hebrew word forms at load time.
+def _filter_hebrew_indices(words: list) -> list:
+    """Indices of the words to keep, dropping suffix-possessive Hebrew forms.
+
     Prefix forms are filtered at suggestion time (in _is_good_suggestion) to avoid
     removing real root words that share a prefix letter (e.g. שלום would be wrongly
     stripped because ש is a prefix and לום exists in the corpus).
+
+    Returns indices rather than the words themselves so the caller can slice a
+    preallocated matrix in one go instead of carrying a parallel list of vectors.
     """
     word_set = set(words)
-    kept_words, kept_vecs = [], []
-    for word, vec in zip(words, vectors):
+    keep = []
+    for i, word in enumerate(words):
         # Suffix possessive ו: זעמו → base זעמ → also check final form זעם
         if len(word) >= 4 and word[-1] in _HE_SUFFIXES_1:
             base = word[:-1]
@@ -558,11 +619,16 @@ def _filter_hebrew_forms(words: list, vectors: list) -> tuple:
             base = word[:-2]
             if base in word_set or _with_final(base) in word_set:
                 continue
-        kept_words.append(word)
-        kept_vecs.append(vec)
-    removed = len(words) - len(kept_words)
-    logger.info(f"  Filtered {removed:,} Hebrew suffix-possessive forms, kept {len(kept_words):,} words")
-    return kept_words, kept_vecs
+        keep.append(i)
+    removed = len(words) - len(keep)
+    logger.info(f"  Filtered {removed:,} Hebrew suffix-possessive forms, kept {len(keep):,} words")
+    return keep
+
+
+def _filter_hebrew_forms(words: list, vectors: list) -> tuple:
+    """List-shaped wrapper over _filter_hebrew_indices, for the v1/v2 cache migration."""
+    keep = _filter_hebrew_indices(words)
+    return [words[i] for i in keep], [vectors[i] for i in keep]
 
 
 def _parse_vec_stream(f, max_words: int = MAX_WORDS, language: str = "en") -> tuple:
@@ -570,9 +636,22 @@ def _parse_vec_stream(f, max_words: int = MAX_WORDS, language: str = "en") -> tu
 
     Stops after max_words lines, so a caller streaming straight from the network
     can close the connection instead of pulling down the whole multi-GB file.
+
+    Rows are L2-normalised individually and written straight into one preallocated
+    float16 buffer. Both details are about the boot-time peak rather than elegance:
+
+      • The original built a Python list of 150k small arrays and joined it with
+        np.vstack, which paid per-array numpy overhead and then allocated a second
+        full copy before the first could be freed.
+      • Buffering in float32 and normalising the whole matrix afterwards is no
+        better — that is a 180MB array plus a 90MB downcast of it. Normalising is
+        row-independent, so doing it inline needs neither.
+
+    Peak here is the 90MB buffer itself, which is also the final result.
     """
     words = []
-    vectors = []
+    buf = np.empty((max_words, 300), dtype=_STORE_DTYPE)
+    n = 0
     first_line = f.readline()  # skip "N dim" header
     logger.info(f"Vec file header: {str(first_line).strip()}")
     for i, line in enumerate(f):
@@ -586,21 +665,23 @@ def _parse_vec_stream(f, max_words: int = MAX_WORDS, language: str = "en") -> tu
             vec = np.array(parts[1:301], dtype=np.float32)
         except ValueError:
             continue
-        if len(vec) != 300:
-            continue
+        # Normalise at float32 before the store; a float16 divide would lose a
+        # digit of precision for nothing.
+        norm = float(np.linalg.norm(vec))
+        buf[n] = vec / norm if norm else vec
         words.append(word)
-        vectors.append(vec)
+        n += 1
         if i % 10_000 == 0 and i > 0:
             logger.info(f"  Loaded {i:,} words...")
     logger.info(f"Loaded {len(words):,} words total")
 
+    matrix = buf[:n]
     if language == "he":
-        words, vectors = _filter_hebrew_forms(words, vectors)
-
-    matrix = np.vstack(vectors).astype(np.float32)
-    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
-    norms = np.where(norms == 0, 1.0, norms)
-    matrix /= norms
+        # The Hebrew filter drops rows, so rebuild compactly from the kept indices.
+        keep = _filter_hebrew_indices(words)
+        words = [words[i] for i in keep]
+        matrix = matrix[np.asarray(keep, dtype=np.int64)]
+        del buf  # `matrix` owns its data now; release the full-size buffer
     return words, matrix
 
 
@@ -632,14 +713,14 @@ def _load_vec_url(url: str, max_words: int = MAX_WORDS, language: str = "en") ->
 
 def _build_space(words: list, matrix: np.ndarray, language: str) -> EmbeddingSpace:
     word_to_idx = {w: i for i, w in enumerate(words)}
-    logger.info(f"Building NN index for {language} ({len(words):,} words)...")
-    nn = NearestNeighbors(n_neighbors=20, metric="cosine", algorithm="brute")
-    nn.fit(matrix)
-    logger.info(f"NN index built for {language}")
+    # No sklearn NearestNeighbors here any more. Every lookup now goes through
+    # _nearest_indices (one matmul + argpartition), which was already faster; and
+    # fitting the estimator on a float16 matrix would have quietly copied the whole
+    # thing up to float64 — 1.4GB — defeating the point of storing it small.
     noun_proto, verb_proto = _build_pos_prototypes(word_to_idx, matrix, language)
     logger.info(f"POS prototypes built for {language}")
     return EmbeddingSpace(words=words, word_to_idx=word_to_idx, matrix=matrix,
-                          nn_index=nn, language=language,
+                          nn_index=None, language=language,
                           noun_proto=noun_proto, verb_proto=verb_proto)
 
 
@@ -652,11 +733,62 @@ async def _download_file(url: str, dest: Path):
     logger.info(f"Download complete: {dest} ({dest.stat().st_size // 1_048_576}MB)")
 
 
+def _fetch_prebuilt_cache(lang: str) -> bool:
+    """Try to download a ready-made cache for `lang` into CACHE_DIR.
+
+    Set PREBUILT_CACHE_URL to a directory URL holding the files this module would
+    otherwise spend a boot producing:
+
+        {lang}_v3.npy   {lang}_v3_words.pkl   {lang}_v8_good.npy
+
+    Why this exists: a free container has no persistent disk, so *every* cold start
+    re-streams ~670MB of raw fastText vectors, parses them, and recomputes the
+    good-word masks — minutes of work, repeated, to arrive at a result that is
+    identical each time and only 174MB. Downloading that result instead turns a
+    multi-minute wake-up into a short one.
+
+    Entirely optional. Any failure falls through to the normal build path, so a
+    missing or stale URL costs nothing but the time spent trying. Returns whether
+    the matrix and word list both landed.
+    """
+    base = os.getenv("PREBUILT_CACHE_URL", "").rstrip("/")
+    if not base:
+        return False
+
+    import urllib.request
+
+    required = [f"{lang}_v3.npy", f"{lang}_v3_words.pkl"]
+    optional = [f"{lang}_v8_good.npy"]  # nice to have; recomputed if absent
+    for name in required + optional:
+        dest = CACHE_DIR / name
+        if dest.exists():
+            continue
+        url = f"{base}/{name}"
+        tmp = dest.with_suffix(dest.suffix + ".part")
+        try:
+            logger.info(f"Fetching prebuilt cache {url}")
+            urllib.request.urlretrieve(url, str(tmp))
+            # Rename only after a complete download, so an interrupted boot can
+            # never leave a truncated .npy that later loads as garbage.
+            tmp.replace(dest)
+            logger.info(f"  -> {dest} ({dest.stat().st_size / 1e6:.0f}MB)")
+        except Exception as e:
+            tmp.unlink(missing_ok=True)
+            if name in required:
+                logger.warning(f"Prebuilt cache unavailable ({url}: {e}); building from source")
+                return False
+            logger.info(f"Optional prebuilt file {name} not available ({e}); will compute it")
+    return all((CACHE_DIR / n).exists() for n in required)
+
+
 def load_or_download_sync(lang: str) -> EmbeddingSpace:
     """Synchronous version for use in run_in_executor."""
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     npy_path = CACHE_DIR / f"{lang}_v3.npy"
     words_path = CACHE_DIR / f"{lang}_v3_words.pkl"
+
+    if not (npy_path.exists() and words_path.exists()):
+        _fetch_prebuilt_cache(lang)
     # older cache paths for migration
     v1_npy = CACHE_DIR / f"{lang}.npy"
     v1_words = CACHE_DIR / f"{lang}_words.pkl"
@@ -711,6 +843,19 @@ def load_or_download_sync(lang: str) -> EmbeddingSpace:
         if raw_path.exists():
             raw_path.unlink()
             logger.info("Cached and deleted raw file")
+
+    # Caches written before the half-precision switch are float32 on disk. Convert
+    # and rewrite once rather than forcing a multi-GB re-download: the point of the
+    # change is the resident footprint, and np.save of the smaller array makes every
+    # later boot cheaper too.
+    if matrix.dtype != _STORE_DTYPE:
+        logger.info(f"Converting {lang} matrix {matrix.dtype} -> {np.dtype(_STORE_DTYPE)} "
+                    f"({matrix.nbytes / 1e6:.0f}MB -> {matrix.nbytes / 2e6:.0f}MB)")
+        matrix = matrix.astype(_STORE_DTYPE)
+        try:
+            np.save(str(npy_path), matrix)
+        except OSError as e:
+            logger.warning(f"Could not rewrite {npy_path} at half precision: {e}")
 
     space = _build_space(words, matrix, lang)
     _load_or_compute_good_mask(space, lang)
@@ -822,7 +967,7 @@ def get_word_vector(space: EmbeddingSpace, word: str) -> "np.ndarray | None":
     idx = space.word_to_idx.get(canonical)
     if idx is None:
         return None
-    return space.matrix[idx]
+    return _row(space, idx)
 
 
 def phrase_vec(space: EmbeddingSpace, phrase: str) -> np.ndarray:
@@ -833,7 +978,7 @@ def phrase_vec(space: EmbeddingSpace, phrase: str) -> np.ndarray:
         canonical = normalize_word(t, space.language)
         idx = space.word_to_idx.get(canonical)
         if idx is not None:
-            vecs.append(space.matrix[idx])
+            vecs.append(_row(space, idx))
     if not vecs:
         raise WordNotFoundError(phrase)
     v = np.mean(vecs, axis=0).astype(np.float32)
@@ -972,7 +1117,7 @@ def _is_good_suggestion(word: str, space: "EmbeddingSpace | None" = None,
             base_idx = space.word_to_idx.get(word[1:])
             word_idx = space.word_to_idx.get(word)
             if base_idx is not None and word_idx is not None:
-                if float(np.dot(space.matrix[word_idx], space.matrix[base_idx])) >= _HE_PREFIX_SIM_MAX:
+                if float(np.dot(_row(space, word_idx), _row(space, base_idx))) >= _HE_PREFIX_SIM_MAX:
                     return False
         # Prefix + internal noun + possessive ה: בבימויה = ב+בימוי+ה
         # Catches prefixed-possessive forms even when only the inner base is in vocab.
@@ -992,7 +1137,7 @@ def _is_good_suggestion(word: str, space: "EmbeddingSpace | None" = None,
         # Threshold 0.02 catches passive participles (מוגש gap≈+0.028) while
         # keeping nouns — the smallest noun gap observed is דובר at -0.045.
         if space.noun_proto is not None and space.verb_proto is not None and idx is not None:
-            w_vec = space.matrix[idx]
+            w_vec = _row(space, idx)
             noun_sim = float(np.dot(w_vec, space.noun_proto))
             verb_sim = float(np.dot(w_vec, space.verb_proto))
             if verb_sim > noun_sim + 0.02:
@@ -1002,7 +1147,7 @@ def _is_good_suggestion(word: str, space: "EmbeddingSpace | None" = None,
         # not noun-dominant (gap < 0.02 in favor of noun).
         if word[0] == 'ל' and len(word) >= 5 and idx is not None:
             if space.noun_proto is not None and space.verb_proto is not None:
-                wv = space.matrix[idx]
+                wv = _row(space, idx)
                 ns = float(np.dot(wv, space.noun_proto))
                 vs = float(np.dot(wv, space.verb_proto))
                 if vs > ns - 0.02:  # not strongly noun → likely infinitive
@@ -1029,7 +1174,7 @@ def _is_good_suggestion(word: str, space: "EmbeddingSpace | None" = None,
         wd = space.word_to_idx  # alias for brevity
         # POS filter: reject verbs, adjectives, adverbs
         if idx is not None and space.noun_proto is not None and space.verb_proto is not None:
-            w_vec = space.matrix[idx]
+            w_vec = _row(space, idx)
             noun_sim = float(np.dot(w_vec, space.noun_proto))
             verb_sim = float(np.dot(w_vec, space.verb_proto))
             if verb_sim > noun_sim + 0.04:
@@ -1078,7 +1223,7 @@ def _nearest_indices(space: EmbeddingSpace, vec: np.ndarray, n: int) -> np.ndarr
     dominated once the Hebrew vocabulary doubled to ~140k words.
     """
     n = min(n, len(space.words))
-    sims = space.matrix @ vec
+    sims = _sims_all(space, vec)
     if n < len(sims):
         top = np.argpartition(-sims, n - 1)[:n]
     else:
@@ -1131,7 +1276,7 @@ def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set
         word = space.words[idx]
         if word in exclude or not _is_good_idx(space, idx):
             continue
-        w_vec = space.matrix[idx]
+        w_vec = _row(space, idx)
         s1 = float(np.dot(w_vec, v1))
         s2 = float(np.dot(w_vec, v2))
         if s1 < MIN_FLOOR or s2 < MIN_FLOOR:
@@ -1149,7 +1294,7 @@ def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set
             word = space.words[idx]
             if word in exclude or not _is_good_idx(space, idx):
                 continue
-            w_vec = space.matrix[idx]
+            w_vec = _row(space, idx)
             s1 = float(np.dot(w_vec, v1))
             s2 = float(np.dot(w_vec, v2))
             if s1 >= MIN_FLOOR and s2 >= MIN_FLOOR:
@@ -1161,7 +1306,7 @@ def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set
             word = space.words[idx]
             if word in exclude or not _is_good_idx(space, idx):
                 continue
-            w_vec = space.matrix[idx]
+            w_vec = _row(space, idx)
             s1 = float(np.dot(w_vec, v1))
             s2 = float(np.dot(w_vec, v2))
             if s1 >= 0.15 and s2 >= 0.15:

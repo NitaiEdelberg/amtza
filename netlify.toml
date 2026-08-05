@@ -5,7 +5,7 @@
 # Functions allow (short timeouts, small bundles, no persistent process). The
 # frontend talks to a backend hosted elsewhere via VITE_API_URL — set that in
 # Netlify's UI under Site settings -> Environment variables, e.g.
-#   VITE_API_URL = https://your-backend.up.railway.app
+#   VITE_API_URL = https://amtza-api.onrender.com
 # (no trailing slash). Rebuild after changing it: Vite inlines env vars at build
 # time, so a redeploy is required for a new value to take effect.
 

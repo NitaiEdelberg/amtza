@@ -1,12 +1,14 @@
-# Backend container, sized for Hugging Face Spaces (free tier: 2 vCPU / 16GB RAM).
+# Backend container, shaped for Hugging Face Spaces (non-root uid 1000, port 7860).
 #
-# Why HF Spaces rather than a serverless host: this process keeps ~350MB of
-# fastText vectors resident, so it needs a real long-lived container with real
-# memory. Spaces gives that away for free, which Railway/Render do not.
+# NOT the live deployment. Spaces now requires a paid plan for anything that runs
+# compute — only Static Spaces are free, and those cannot run Python — so the
+# backend runs on Render's free tier instead, from `render.yaml`, with no container
+# involved. This file is kept because it is still correct, and any container host
+# (Spaces on a paid plan, Fly, Cloud Run) can use it as-is.
 #
 # The vectors are streamed at boot (see _load_vec_url) rather than downloaded in
-# full, so a cold start is ~2 minutes and needs no persistent disk — which matters
-# here because free Spaces have ephemeral storage and rebuild on restart.
+# full, so a cold start needs no persistent disk. Set PREBUILT_CACHE_URL to skip
+# even that and fetch the finished 178MB caches instead.
 # 3.10 chosen deliberately: requirements.txt pins numpy 1.24.4 / scikit-learn 1.3.2,
 # which both ship prebuilt cp310 wheels — so the image builds without needing a
 # compiler. (Local dev runs 3.8; 3.10 is the safe modern floor for these pins.)
