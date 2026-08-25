@@ -108,7 +108,15 @@ app.add_middleware(
 )
 
 
-def _require_models():
+def _require_models(lang: Optional[str] = None):
+    """Gate an endpoint on the model it actually needs.
+
+    Readiness is per language, not global. `he` finishes loading well before `en`
+    (they load one after the other to keep the memory peak down), so gating every
+    endpoint on *both* made a Hebrew player wait out the English load for nothing.
+    """
+    if lang is not None and lang in spaces:
+        return
     if not models_loaded:
         raise HTTPException(503, "Models are still loading, please wait")
 
@@ -117,7 +125,14 @@ def _require_models():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "models_loaded": models_loaded}
+    # `languages` is the useful field: the client can open a Hebrew game the moment
+    # `he` is in, instead of waiting on `models_loaded`, which only flips once
+    # English has loaded too. `models_loaded` stays for older clients.
+    return {
+        "status": "ok",
+        "models_loaded": models_loaded,
+        "languages": sorted(spaces.keys()),
+    }
 
 
 @app.get("/pair")
@@ -137,9 +152,8 @@ class GuessRequest(BaseModel):
 
 @app.post("/guess")
 def guess(req: GuessRequest):
-    _require_models()
-
     lang = detect_language(req.word1)
+    _require_models(lang)
     if lang not in spaces:
         raise HTTPException(500, f"No embedding space for language: {lang}")
     space = spaces[lang]
@@ -248,8 +262,10 @@ def guess(req: GuessRequest):
 
 @app.get("/validate/{word}")
 def validate(word: str):
-    _require_models()
     lang = detect_language(word)
+    _require_models(lang)
+    if lang not in spaces:
+        raise HTTPException(500, f"No embedding space for language: {lang}")
     space = spaces[lang]
     canonical = normalize_word(word, lang)
     valid = is_valid_word(space, word)
@@ -273,8 +289,10 @@ class HintRequest(BaseModel):
 
 @app.post("/hint")
 def hint(req: HintRequest):
-    _require_models()
     lang = detect_language(req.word1)
+    _require_models(lang)
+    if lang not in spaces:
+        raise HTTPException(500, f"No embedding space for language: {lang}")
     space = spaces[lang]
     try:
         hints = get_hints(space, req.word1, req.word2)

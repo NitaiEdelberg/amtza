@@ -19,3 +19,31 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+# Long-cache the fingerprinted bundles, never cache the HTML shell. Without this
+# a returning player can get a stale index.html that points at an asset filename
+# the last deploy removed — a blank page rather than an old version.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+# Crawler-facing files change rarely but must not go stale for a day.
+[[headers]]
+  for = "/*.xml"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "SAMEORIGIN"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    # Nothing here needs a camera, a microphone or a location.
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), interest-cohort=()"

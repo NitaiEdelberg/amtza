@@ -1,5 +1,6 @@
 import Confetti from "react-confetti";
 import { useEffect, useState } from "react";
+import AdSlot from "./AdSlot";
 import PathHistory from "./PathHistory";
 
 export default function WinScreen({ winMessage, rounds, playerWord, computerWord, history, onNewGame, language }) {
@@ -42,6 +43,11 @@ export default function WinScreen({ winMessage, rounds, playerWord, computerWord
         <button className="btn btn--primary btn--large" onClick={onNewGame}>
           {isHe ? "משחק חדש 🎮" : "New Game 🎮"}
         </button>
+        {/* Below the New Game button on purpose. A player who has just won is
+            about to click something, and an ad above that button is how accidental
+            clicks happen — which is both a bad experience and the fastest route to
+            an AdSense invalid-traffic ban. */}
+        <AdSlot label={isHe ? "פרסומת" : "Advertisement"} />
       </div>
     </div>
   );

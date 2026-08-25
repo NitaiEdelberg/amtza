@@ -1,12 +1,20 @@
-import { useState, useEffect } from "react";
-import { checkHealth, getRandomPair, submitGuess, getHint } from "./api";
+import { useState, useEffect, useRef } from "react";
+import { checkHealth, getRandomPair, submitGuess, getHint, waitForLanguage } from "./api";
 import GameBoard from "./components/GameBoard";
+import SiteFooter from "./components/SiteFooter";
 import WinScreen from "./components/WinScreen";
 import "./App.css";
 
-// phases: loading → idle → guessing → revealing → won → idle
+// phases: idle → guessing → revealing → won → idle
+//
+// There is deliberately no "loading" phase. A free-tier backend that has gone to
+// sleep needs up to a minute to wake and load its vectors, and the app used to
+// hold a spinner in front of the player for that entire time. Now the welcome
+// screen renders immediately, the health poll wakes the server in the background
+// while the player reads the rules, and the wait — if any of it is left by the
+// time they press Play — happens on the button.
 export default function App() {
-  const [gamePhase, setGamePhase] = useState("loading");
+  const [gamePhase, setGamePhase] = useState("idle");
   const [currentPair, setCurrentPair] = useState(null);
   const [lastRound, setLastRound] = useState(null);
   const [history, setHistory] = useState([]);
@@ -18,50 +26,60 @@ export default function App() {
   const [usedWords, setUsedWords] = useState([]);
   const [guessError, setGuessError] = useState(null);
   const [startError, setStartError] = useState(null);
-  const [bootSeconds, setBootSeconds] = useState(0);
-  const [bootUnreachable, setBootUnreachable] = useState(false);
-  const [bootAttempt, setBootAttempt] = useState(0); // bumping this restarts the poll
+  const [waking, setWaking] = useState(null); // {seconds, unreachable} while waiting on the server
+  // A ref, not state: nothing renders from it — it only decides whether pressing
+  // Play can go straight through — so re-rendering the app on each poll is waste.
+  const readyLangsRef = useRef([]);
 
-  // Poll /health until the models are ready.
+  // Warm the backend the moment the page opens, and keep a note of which
+  // languages are playable.
   //
-  // A hosted backend can be asleep (free tiers idle out), so the first visit may
-  // wait a couple of minutes: /health answers immediately but models_loaded stays
-  // false while the vectors stream in. We keep the player informed as that runs,
-  // and after repeated connection failures say so plainly instead of spinning
-  // forever behind a "loading models" message that isn't true.
+  // The request itself is the point as much as the answer is: a sleeping free
+  // instance wakes on any request, so this poll starts the clock while the player
+  // is still reading the rules. Nothing here blocks rendering — the result only
+  // decides whether pressing Play is instant or has to wait a few more seconds.
   useEffect(() => {
     let cancelled = false;
-    let consecutiveErrors = 0;
-    const startedAt = Date.now();
 
     async function poll() {
-      let reachable = true;
       try {
         const health = await checkHealth();
         if (cancelled) return;
-        if (health.models_loaded) {
-          setBootUnreachable(false);
-          setGamePhase("idle");
-          return;
-        }
-        consecutiveErrors = 0;
+        const langs = health.languages || (health.models_loaded ? ["he", "en"] : []);
+        readyLangsRef.current = langs;
+        if (langs.includes("he") && langs.includes("en")) return; // fully up; stop polling
       } catch {
-        reachable = false;
-        consecutiveErrors += 1;
+        // Ignore: startGame surfaces an unreachable server, where it's actionable.
       }
-      if (cancelled) return;
-      setBootUnreachable(!reachable && consecutiveErrors >= 4);
-      setBootSeconds(Math.round((Date.now() - startedAt) / 1000));
-      setTimeout(poll, reachable ? 2500 : 3000);
+      if (!cancelled) setTimeout(poll, 3000);
     }
 
     poll();
     return () => { cancelled = true; };
-  }, [bootAttempt]);
+  }, []);
 
   async function startGame(lang) {
     setIsLoading(true);
     setStartError(null);
+
+    // Only wait if this language isn't in yet — and wait here, on the button,
+    // rather than behind a full-screen spinner the player met on arrival.
+    if (!readyLangsRef.current.includes(lang)) {
+      setWaking({ seconds: 0, unreachable: false });
+      const ready = await waitForLanguage(lang, { onTick: setWaking });
+      setWaking(null);
+      if (!ready) {
+        setStartError(
+          lang === "he"
+            ? "השרת לא מגיב. הוא כנראה נרדם — נסו שוב בעוד רגע."
+            : "The server isn't responding. It may be asleep — try again in a moment."
+        );
+        setIsLoading(false);
+        return;
+      }
+      readyLangsRef.current = [...readyLangsRef.current, lang];
+    }
+
     try {
       const pair = await getRandomPair(lang);
       setCurrentPair(pair);
@@ -159,46 +177,6 @@ export default function App() {
       </header>
 
       <main className="app-main">
-        {gamePhase === "loading" && (
-          <div className="loading-screen">
-            {bootUnreachable ? (
-              <>
-                <div className="loading-screen__icon">🔌</div>
-                <p className="loading-screen__text">
-                  {selectedLang === "he" ? "אין חיבור לשרת" : "Can't reach the server"}
-                </p>
-                <p className="loading-screen__sub">
-                  {selectedLang === "he"
-                    ? "השרת אולי נרדם. אפשר לנסות שוב בעוד רגע."
-                    : "The server may be asleep. Give it a moment and try again."}
-                </p>
-                <button
-                  className="btn btn--primary"
-                  onClick={() => { setBootUnreachable(false); setBootAttempt((n) => n + 1); }}
-                >
-                  {selectedLang === "he" ? "נסו שוב" : "Try again"}
-                </button>
-              </>
-            ) : (
-              <>
-                <div className="loading-screen__spinner">⟳</div>
-                <p className="loading-screen__text">
-                  {selectedLang === "he" ? "טוען מודלי שפה... ☕" : "Loading language models... ☕"}
-                </p>
-                <p className="loading-screen__sub">
-                  {bootSeconds > 25
-                    ? (selectedLang === "he"
-                        ? "מעירים את השרת. זה יכול לקחת עד שתי דקות בפעם הראשונה"
-                        : "Waking the server. This can take up to two minutes on a first visit")
-                    : (selectedLang === "he"
-                        ? "זה לוקח כדקה בפעם הראשונה"
-                        : "This takes about a minute the first time")}
-                </p>
-              </>
-            )}
-          </div>
-        )}
-
         {gamePhase === "idle" && (
           <div className="idle-screen">
             <div className="idle-screen__card">
@@ -240,8 +218,21 @@ export default function App() {
                 onClick={() => startGame(selectedLang)}
                 disabled={isLoading}
               >
-                {selectedLang === "he" ? "בואו נשחק! 🎮" : "Let's Play! 🎮"}
+                {waking
+                  ? (selectedLang === "he" ? "מעירים את השרת… ⏳" : "Waking the server… ⏳")
+                  : (selectedLang === "he" ? "בואו נשחק! 🎮" : "Let's Play! 🎮")}
               </button>
+              {waking && (
+                <p className="idle-screen__waking" role="status">
+                  {waking.unreachable
+                    ? (selectedLang === "he"
+                        ? "אין תשובה מהשרת. עוד מנסים…"
+                        : "No answer yet. Still trying…")
+                    : (selectedLang === "he"
+                        ? "הפעם הראשונה ביום לוקחת כדקה — השרת נרדם כשאף אחד לא משחק"
+                        : "The first visit of the day takes about a minute — the server sleeps when nobody is playing")}
+                </p>
+              )}
               {startError && (
                 <p className="idle-screen__error" role="alert">{startError}</p>
               )}
@@ -280,6 +271,11 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Only on the welcome screen. It's the page a search result lands on, and
+          the one moment the player isn't mid-round — prose under a live game board
+          would just be something to scroll past. */}
+      {gamePhase === "idle" && <SiteFooter language={selectedLang} />}
     </div>
   );
 }

@@ -97,19 +97,41 @@ class TestParseContract(unittest.TestCase):
 
 
 class TestHebrewFiltering(unittest.TestCase):
-    def test_suffix_possessive_forms_are_dropped_with_their_rows(self):
-        # זעמו is זעם + possessive ו, and its base is present, so it goes. The rows
-        # that remain must still belong to the words that remain.
+    """Parsing must not remove anything from the Hebrew vocabulary.
+
+    It used to drop possessive forms (זעמו = זעם + ו) at parse time. The rule is
+    "the word minus its suffix is also a word", which cannot tell a possessive
+    from a feminine noun that merely ends the same way — so it deleted כנסייה,
+    ספרייה, עירייה, תעשייה, שחייה, עלייה, טלוויזיה, אנרגיה, סתיו and רדיו from the
+    model outright, and players typing them were told their word doesn't exist.
+
+    The pool of words the computer may *answer* with is a separate concern,
+    handled by the curated list; an extra possessive form in the vocabulary only
+    widens what a player is allowed to guess.
+    """
+
+    def test_possessive_forms_stay_in_the_vocabulary(self):
         rows = [("זעם", row(1)), ("זעמו", row(2)), ("שלום", row(3))]
         words, matrix = E._parse_vec_stream(vec_stream(rows), max_words=10, language="he")
-        self.assertNotIn("זעמו", words)
-        self.assertEqual(words, ["זעם", "שלום"])
-        self.assertEqual(matrix.shape[0], 2)
+        self.assertEqual(words, ["זעם", "זעמו", "שלום"])
+        self.assertEqual(matrix.shape[0], 3)
 
+    def test_feminine_nouns_ending_in_yod_he_survive(self):
+        # The words this filter actually cost us. כנסי and ספרי are both real
+        # tokens in the corpus, which is exactly why the rule fired on them.
+        rows = [("כנסי", row(1)), ("כנסייה", row(2)), ("ספרי", row(3)),
+                ("ספרייה", row(4)), ("סתי", row(5)), ("סתיו", row(6))]
+        words, _ = E._parse_vec_stream(vec_stream(rows), max_words=10, language="he")
+        for word in ("כנסייה", "ספרייה", "סתיו"):
+            self.assertIn(word, words)
+
+    def test_rows_stay_aligned_with_their_words(self):
+        rows = [("זעם", row(1)), ("זעמו", row(2)), ("שלום", row(3))]
+        words, matrix = E._parse_vec_stream(vec_stream(rows), max_words=10, language="he")
         expected = np.array(rows[2][1], dtype=np.float32)
         expected /= np.linalg.norm(expected)
         cosine = float(np.dot(matrix[words.index("שלום")].astype(np.float32), expected))
-        self.assertGreater(cosine, 0.9999, "שלום kept the row belonging to זעמו")
+        self.assertGreater(cosine, 0.9999, "שלום is holding another word's row")
 
     def test_english_is_not_filtered(self):
         rows = [("go", row(1)), ("goes", row(2))]

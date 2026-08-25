@@ -111,26 +111,9 @@ body {
   background: rgba(108,142,255,0.1);
 }
 
-/* ── Loading Screen ─────────────────────────────────────────────────────────── */
-.loading-screen {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
-  padding: 4rem 2rem;
-  text-align: center;
-}
-
-.loading-screen__spinner {
-  font-size: 3rem;
-  animation: spin 1.5s linear infinite;
-}
-
+/* The full-screen boot spinner is gone — the welcome screen now renders while the
+   backend wakes — but the keyframe it defined is still used by the guess input. */
 @keyframes spin { to { transform: rotate(360deg); } }
-
-.loading-screen__text { font-size: 1.3rem; font-weight: 600; }
-.loading-screen__sub { color: var(--text2); }
 
 /* ── Idle / Welcome Screen ──────────────────────────────────────────────────── */
 .idle-screen {
@@ -662,7 +645,13 @@ body {
   color: var(--red);
 }
 
-.loading-screen__icon { font-size: 2.5rem; }
+/* Shown under the Play button while a sleeping free instance wakes up. */
+.idle-screen__waking {
+  margin-top: 0.85rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text2);
+}
 
 /* Quiet escape hatch from a long game — present but not competing with Hint. */
 .game-board__restart {
@@ -687,3 +676,78 @@ body {
 .error-boundary__emoji { font-size: 3rem; }
 .error-boundary h2 { font-size: 1.5rem; font-weight: 700; }
 .error-boundary p { color: var(--text2); max-width: 32rem; }
+
+/* ── Ad slot ───────────────────────────────────────────────────────────────────
+   min-height is the important line. The unit renders after the game is already
+   on screen, so without reserved space it would push the board down as it fills:
+   a layout shift Google measures and ranks on, and a moving target under a
+   player's thumb. The label above it is an AdSense placement requirement and
+   also plain honesty about what the box is. */
+.ad-slot {
+  display: block;
+  width: 100%;
+  max-width: 728px;
+  margin: 2rem auto 0;
+  min-height: 110px;
+  text-align: center;
+}
+
+.ad-slot__label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text2);
+  opacity: 0.55;
+}
+
+.ad-slot__unit {
+  width: 100%;
+  min-height: 90px;
+}
+
+/* ── Site footer ───────────────────────────────────────────────────────────────
+   The page's only prose, and what a search engine has to work with. Sized to
+   read like an explanation rather than a wall: measured column, generous line
+   height, headings that don't compete with the game title above. */
+.site-footer {
+  width: 100%;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+  border-top: 1px solid var(--border);
+  color: var(--text2);
+  font-size: 0.95rem;
+  line-height: 1.75;
+}
+
+.site-footer section + section { margin-top: 2rem; }
+
+.site-footer h2 {
+  color: var(--text);
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin-bottom: 0.6rem;
+}
+
+.site-footer p + p { margin-top: 0.75rem; }
+.site-footer strong { color: var(--text); font-weight: 700; }
+
+.site-footer ol {
+  margin: 0.5rem 0 0;
+  padding-inline-start: 1.4rem;
+}
+.site-footer ol li { margin-bottom: 0.3rem; }
+
+.site-footer__meta {
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+@media (max-width: 600px) {
+  .site-footer { padding: 2rem 1.25rem 3rem; font-size: 0.9rem; }
+}

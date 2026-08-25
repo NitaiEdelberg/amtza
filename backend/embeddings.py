@@ -341,14 +341,85 @@ def _compute_good_mask(space: EmbeddingSpace) -> "np.ndarray":
     return good
 
 
-def _load_or_compute_good_mask(space: EmbeddingSpace, lang: str) -> None:
-    """Attach space.good_mask, loading the disk cache when present else computing + saving it.
+DATA_DIR = Path(__file__).parent / "data"
 
-    Keyed to the v3 model version and validated against the current vocab length so a stale
-    cache (different vocabulary) is transparently recomputed. Cached file: {lang}_v8_good.npy.
-    The version suffix (v8) is bumped whenever the blocklists/filters change so a stale
-    mask from a previous deploy is invalidated even when the vocab length is unchanged.
+# Below this, a curated file is assumed to be truncated or mis-encoded rather than
+# deliberately tiny, and the computed filters are used instead. A real list is
+# well over a thousand words; a few hundred would make the computer's answers
+# repetitive and leave parts of the semantic space with no candidate nearby.
+_MIN_CURATED_WORDS = 600
+
+
+def _load_curated_mask(space: EmbeddingSpace, lang: str) -> "np.ndarray | None":
+    """Build the playable-word mask from `data/{lang}_playable.txt`, or None.
+
+    The curated list is the answer to a problem the filters could not solve. They
+    are good at *morphology* — they reliably reject בים, לעץ, נישואיה, running,
+    biggest — and hopeless at everything else, because "is this a word a player
+    would enjoy being offered?" is not a property of a word's shape. Roughly 40% of
+    what survived them in Hebrew was proper nouns (גולדמן, ונצואלה, דורטמונד) with
+    no capital letter to give them away, alongside corpus debris (תרל, מטכ,
+    בינוויקי). Each new offender meant another name in another blocklist.
+
+    Naming the pool instead ends that: a word is playable because it is on the
+    list, not because no rule happened to catch it.
+
+    Returns None when no usable list is present, so the computed filters still run
+    for a language that hasn't been curated.
     """
+    path = DATA_DIR / f"{lang}_playable.txt"
+    if not path.exists():
+        return None
+    try:
+        raw = path.read_text(encoding="utf-8").splitlines()
+    except OSError as e:
+        logger.warning(f"Could not read {path}: {e}; falling back to computed filters")
+        return None
+
+    wanted, dropped = set(), []
+    for line in raw:
+        word = line.split("#", 1)[0].strip()
+        # Multi-word entries are listed for readability (בית ספר, ice cream) but
+        # can't be answers: the model has one vector per token.
+        if not word or " " in word:
+            continue
+        if word in space.word_to_idx:
+            wanted.add(word)
+        else:
+            dropped.append(word)
+
+    if len(wanted) < _MIN_CURATED_WORDS:
+        logger.warning(f"Curated list for {lang} matched only {len(wanted)} vocabulary "
+                       f"words (<{_MIN_CURATED_WORDS}); falling back to computed filters")
+        return None
+
+    mask = np.zeros(len(space.words), dtype=bool)
+    for word in wanted:
+        mask[space.word_to_idx[word]] = True
+    logger.info(f"Curated playable list for {lang}: {len(wanted):,} words "
+                f"({len(dropped)} not in vocabulary)")
+    if dropped:
+        logger.info(f"  not in {lang} vocabulary: {', '.join(sorted(dropped)[:40])}"
+                    f"{' …' if len(dropped) > 40 else ''}")
+    return mask
+
+
+def _load_or_compute_good_mask(space: EmbeddingSpace, lang: str) -> None:
+    """Attach space.good_mask.
+
+    Three sources, in order of preference: the curated playable list, a cached
+    computed mask, or a fresh computation of the filters.
+
+    The curated path needs no disk cache — it is a set lookup over the vocabulary,
+    measured in milliseconds against the ~12s the Hebrew filter pass costs — which
+    is also why it removes a chunk of first-boot time on a cold container.
+    """
+    curated = _load_curated_mask(space, lang)
+    if curated is not None:
+        space.good_mask = curated
+        _build_good_submatrix(space)
+        return
+
     mask_path = CACHE_DIR / f"{lang}_v8_good.npy"
     mask = None
     if mask_path.exists():
@@ -463,8 +534,10 @@ _HE_PREFIX_SIM_MAX = 0.45
 
 _HE_PREFIXES_1 = set("בכלושמה")
 _HE_PREFIXES_2 = {"ול", "וב", "וכ", "ומ", "שב", "של", "שמ", "הב", "הכ", "המ", "וה", "לה", "בה"}
-_HE_SUFFIXES_1 = set("ו")      # possessive: יהודי → יהודיו
-_HE_SUFFIXES_2 = {"יו", "יה"}  # plural possessive: ילד → ילדיו
+# (The possessive-suffix sets that used to live here are gone with the parse-time
+# filter they fed. Stripping ו / יו / יה and asking whether the remainder is a word
+# cannot distinguish ילדיו from כנסייה, and it was deleting the latter — see
+# _parse_vec_stream.)
 
 # When a suffix is stripped, the new last letter may need to become a Hebrew final form.
 # e.g. זעמו → strip ו → זעמ (non-final מ) but vocab stores זעם (final ם).
@@ -621,41 +694,6 @@ def _build_pos_prototypes(word_to_idx: dict, matrix: np.ndarray, lang: str = "he
     return np_arr, vp_arr
 
 
-def _filter_hebrew_indices(words: list) -> list:
-    """Indices of the words to keep, dropping suffix-possessive Hebrew forms.
-
-    Prefix forms are filtered at suggestion time (in _is_good_suggestion) to avoid
-    removing real root words that share a prefix letter (e.g. שלום would be wrongly
-    stripped because ש is a prefix and לום exists in the corpus).
-
-    Returns indices rather than the words themselves so the caller can slice a
-    preallocated matrix in one go instead of carrying a parallel list of vectors.
-    """
-    word_set = set(words)
-    keep = []
-    for i, word in enumerate(words):
-        # Suffix possessive ו: זעמו → base זעמ → also check final form זעם
-        if len(word) >= 4 and word[-1] in _HE_SUFFIXES_1:
-            base = word[:-1]
-            if base in word_set or _with_final(base) in word_set:
-                continue
-        # Suffix possessives יו/יה: ילדיו → base ילדי
-        if len(word) >= 5 and word[-2:] in _HE_SUFFIXES_2:
-            base = word[:-2]
-            if base in word_set or _with_final(base) in word_set:
-                continue
-        keep.append(i)
-    removed = len(words) - len(keep)
-    logger.info(f"  Filtered {removed:,} Hebrew suffix-possessive forms, kept {len(keep):,} words")
-    return keep
-
-
-def _filter_hebrew_forms(words: list, vectors: list) -> tuple:
-    """List-shaped wrapper over _filter_hebrew_indices, for the v1/v2 cache migration."""
-    keep = _filter_hebrew_indices(words)
-    return [words[i] for i in keep], [vectors[i] for i in keep]
-
-
 def _parse_vec_stream(f, max_words: int = MAX_WORDS, language: str = "en") -> tuple:
     """Parse a fastText .vec text stream (already decompressed, utf-8 decoded).
 
@@ -700,14 +738,21 @@ def _parse_vec_stream(f, max_words: int = MAX_WORDS, language: str = "en") -> tu
             logger.info(f"  Loaded {i:,} words...")
     logger.info(f"Loaded {len(words):,} words total")
 
-    matrix = buf[:n]
-    if language == "he":
-        # The Hebrew filter drops rows, so rebuild compactly from the kept indices.
-        keep = _filter_hebrew_indices(words)
-        words = [words[i] for i in keep]
-        matrix = matrix[np.asarray(keep, dtype=np.int64)]
-        del buf  # `matrix` owns its data now; release the full-size buffer
-    return words, matrix
+    # NOTE: nothing is filtered out of the vocabulary here any more.
+    #
+    # This used to drop Hebrew possessive forms (ילדיו, זעמו) at parse time, which
+    # meant they were gone from the model entirely rather than merely barred from
+    # the computer's answers. That cost real words: the rule deletes any word whose
+    # stem-minus-suffix also exists, and Hebrew feminine nouns in ־ייה collide with
+    # it wholesale — כנסייה, ספרייה, עירייה, תעשייה, שחייה, עלייה, פטרייה — as do
+    # loanwords in ־יה (טלוויזיה, אנרגיה, דמוקרטיה, כימיה, גלריה) and short words
+    # ending in ו (סתיו, רדיו, תיקו). A player typing any of them was told their
+    # word "isn't in the dictionary", when in fact the app had thrown it away.
+    #
+    # Keeping them costs nothing: what the computer may *answer* with is decided by
+    # the curated playable list, so a possessive form in the vocabulary is simply an
+    # extra word the player is allowed to guess.
+    return words, buf[:n]
 
 
 def _load_vec_file(path: str, max_words: int = MAX_WORDS, language: str = "en") -> tuple:
@@ -764,13 +809,16 @@ def _fetch_prebuilt_cache(lang: str) -> bool:
     Set PREBUILT_CACHE_URL to a directory URL holding the files this module would
     otherwise spend a boot producing:
 
-        {lang}_v3.npy   {lang}_v3_words.pkl   {lang}_v8_good.npy
+        {lang}_v4.npy   {lang}_v4_words.pkl
 
     Why this exists: a free container has no persistent disk, so *every* cold start
-    re-streams ~670MB of raw fastText vectors, parses them, and recomputes the
-    good-word masks — minutes of work, repeated, to arrive at a result that is
-    identical each time and only 174MB. Downloading that result instead turns a
-    multi-minute wake-up into a short one.
+    re-streams ~670MB of raw fastText vectors and parses them — minutes of work,
+    repeated, to arrive at a result that is identical each time and only 174MB.
+    Downloading that result instead turns a multi-minute wake-up into a short one.
+
+    The playable-word mask is no longer part of this: it is now built from the
+    curated word list at load, which is a set lookup rather than the filter pass
+    that used to be worth caching.
 
     Entirely optional. Any failure falls through to the normal build path, so a
     missing or stale URL costs nothing but the time spent trying. Returns whether
@@ -782,9 +830,8 @@ def _fetch_prebuilt_cache(lang: str) -> bool:
 
     import urllib.request
 
-    required = [f"{lang}_v3.npy", f"{lang}_v3_words.pkl"]
-    optional = [f"{lang}_v8_good.npy"]  # nice to have; recomputed if absent
-    for name in required + optional:
+    required = [f"{lang}_v4.npy", f"{lang}_v4_words.pkl"]
+    for name in required:
         dest = CACHE_DIR / name
         if dest.exists():
             continue
@@ -799,53 +846,31 @@ def _fetch_prebuilt_cache(lang: str) -> bool:
             logger.info(f"  -> {dest} ({dest.stat().st_size / 1e6:.0f}MB)")
         except Exception as e:
             tmp.unlink(missing_ok=True)
-            if name in required:
-                logger.warning(f"Prebuilt cache unavailable ({url}: {e}); building from source")
-                return False
-            logger.info(f"Optional prebuilt file {name} not available ({e}); will compute it")
+            logger.warning(f"Prebuilt cache unavailable ({url}: {e}); building from source")
+            return False
     return all((CACHE_DIR / n).exists() for n in required)
 
 
 def load_or_download_sync(lang: str) -> EmbeddingSpace:
     """Synchronous version for use in run_in_executor."""
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    npy_path = CACHE_DIR / f"{lang}_v3.npy"
-    words_path = CACHE_DIR / f"{lang}_v3_words.pkl"
+    npy_path = CACHE_DIR / f"{lang}_v4.npy"
+    words_path = CACHE_DIR / f"{lang}_v4_words.pkl"
 
     if not (npy_path.exists() and words_path.exists()):
         _fetch_prebuilt_cache(lang)
-    # older cache paths for migration
-    v1_npy = CACHE_DIR / f"{lang}.npy"
-    v1_words = CACHE_DIR / f"{lang}_words.pkl"
-    v2_npy = CACHE_DIR / f"{lang}_v2.npy"
-    v2_words = CACHE_DIR / f"{lang}_v2_words.pkl"
 
+    # Older caches (v1/v2/v3) used to be migrated in place rather than re-parsed.
+    # That path is gone: every one of them was written by a parser that deleted
+    # Hebrew ־ייה nouns from the vocabulary, and migration reapplied exactly the
+    # filter this version exists to remove. Re-parsing from source is a couple of
+    # minutes, once, and is the only way to get those words back.
     if npy_path.exists() and words_path.exists():
         logger.info(f"Loading cached {lang} embeddings from {CACHE_DIR}...")
         matrix = np.load(str(npy_path))
         with open(words_path, "rb") as f:
             words = pickle.load(f)
         logger.info(f"Loaded {len(words):,} {lang} words from cache")
-    elif (v2_npy.exists() and v2_words.exists()) or (v1_npy.exists() and v1_words.exists()):
-        src_npy = v2_npy if v2_npy.exists() else v1_npy
-        src_words = v2_words if v2_words.exists() else v1_words
-        logger.info(f"Migrating {lang} cache to v3 (applying suffix+prefix filter)...")
-        matrix_raw = np.load(str(src_npy))
-        with open(src_words, "rb") as f:
-            words_raw = pickle.load(f)
-        if lang == "he":
-            vectors_list = [matrix_raw[i] for i in range(len(words_raw))]
-            words, vectors_list = _filter_hebrew_forms(words_raw, vectors_list)
-            matrix = np.vstack(vectors_list).astype(np.float32)
-            norms = np.linalg.norm(matrix, axis=1, keepdims=True)
-            norms = np.where(norms == 0, 1.0, norms)
-            matrix /= norms
-        else:
-            words, matrix = words_raw, matrix_raw
-        np.save(str(npy_path), matrix)
-        with open(words_path, "wb") as f:
-            pickle.dump(words, f)
-        logger.info(f"Migration complete: {len(words):,} {lang} words saved as v3")
     else:
         url = VEC_URLS[lang]
         is_gz = url.endswith(".gz")
@@ -1285,6 +1310,28 @@ def _nearest_indices(space: EmbeddingSpace, vec: np.ndarray, n: int) -> np.ndarr
     return top[np.argsort(-sims[top])]
 
 
+# How far apart the two endpoint similarities may be before a candidate counts as
+# belonging to one of them rather than sitting between them.
+#
+# The ceiling used to apply to each similarity on its own, which conflated two
+# different things: a word glued to one endpoint, and a word strongly related to
+# *both* — which is precisely what a good middle word is. So cat+dog answered
+# "paw" while rejecting "pet" (0.68/0.73), morning+night answered "day" while
+# rejecting "evening" (0.74/0.77), and winter+summer rejected "autumn"
+# (0.73/0.72).
+#
+# Measured across those pairs the two populations don't overlap. Balanced middles:
+# autumn 0.01, school 0.01, evening 0.03, pet 0.06. Endpoint-glued words: kitten
+# 0.20, afternoon 0.21, עיירה 0.22, grandchild 0.23, valley 0.30, sea 0.33. The cut
+# sits in the empty band between them.
+_IMBALANCE_TOL = 0.12
+
+
+def _too_close_to_one_end(s1: float, s2: float, ceiling: float) -> bool:
+    """Whether a candidate is bound to one endpoint rather than between the two."""
+    return max(s1, s2) > ceiling and abs(s1 - s2) > _IMBALANCE_TOL
+
+
 def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set) -> str:
     """Find the best middle word using min-similarity scoring: min(sim(w,w1), sim(w,w2)).
     This maximises the *weaker* connection, ensuring the result is genuinely balanced
@@ -1362,7 +1409,7 @@ def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set
         s2 = float(sims2[pos])
         if s1 < MIN_FLOOR or s2 < MIN_FLOOR:
             continue
-        if s1 > sim_ceiling or s2 > sim_ceiling:
+        if _too_close_to_one_end(s1, s2, sim_ceiling):
             continue
         score = min(s1, s2)
         if score > best_score:
@@ -1376,6 +1423,13 @@ def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set
     if best_word is None:
         # Fallback 2: absolute minimum — any word related to at least one endpoint
         best_word = scan(lambda s1, s2: s1 >= 0.15 and s2 >= 0.15)
+
+    if best_word is None:
+        # Fallback 3: the most balanced candidate there is. Reached only when the
+        # pool near this midpoint is tiny — but "the computer couldn't find a middle
+        # word", which is what the caller reports otherwise, ends the player's game
+        # over an internal threshold, and there is always *some* nearest word.
+        best_word = scan(lambda s1, s2: True)
 
     return best_word
 

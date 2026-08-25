@@ -22,6 +22,34 @@ export async function checkHealth() {
   return res.json();
 }
 
+/** Resolve once `lang` is playable, or false if it never becomes ready.
+ *
+ * Readiness is per language: the backend loads Hebrew first, so a Hebrew game can
+ * start while English is still streaming in. Older backends don't send
+ * `languages`, so fall back to the global flag.
+ */
+export async function waitForLanguage(lang, { timeoutMs = 180000, onTick } = {}) {
+  const startedAt = Date.now();
+  let consecutiveErrors = 0;
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const health = await checkHealth();
+      consecutiveErrors = 0;
+      if (health.languages ? health.languages.includes(lang) : health.models_loaded) {
+        return true;
+      }
+    } catch {
+      consecutiveErrors += 1;
+    }
+    onTick?.({
+      seconds: Math.round((Date.now() - startedAt) / 1000),
+      unreachable: consecutiveErrors >= 4,
+    });
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  return false;
+}
+
 export async function getRandomPair(lang = null) {
   const url = lang ? `${BASE_URL}/pair?lang=${lang}` : `${BASE_URL}/pair`;
   return handleResponse(await fetch(url));

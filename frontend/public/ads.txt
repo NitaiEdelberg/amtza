@@ -1,0 +1,12 @@
+# AdSense authorised-sellers file.
+#
+# Required before ads will serve: Google checks https://<domain>/ads.txt and, if
+# it is missing or doesn't name your publisher ID, treats the inventory as
+# unauthorised. Uncomment the line below and replace pub-0000000000000000 with
+# your own publisher ID (the digits in ca-pub-…, no "ca-" prefix here).
+#
+# google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0
+#
+# Note: on a *.netlify.app subdomain this file has no effect — ads.txt is read
+# per registrable domain, and netlify.app belongs to Netlify. Serving ads is a
+# real reason to put the game on a domain of your own.

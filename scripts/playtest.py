@@ -29,6 +29,7 @@ import numpy as np  # noqa: E402
 from embeddings import (  # noqa: E402
     WordNotFoundError,
     _is_good_idx,
+    _nearest_good_indices,
     _phrase_tokens,
     compute_midpoint,
     find_best_middle,
@@ -54,14 +55,15 @@ def candidates(space, w1, w2, exclude=frozenset(), k=12):
     v1 = phrase_vec(space, w1)
     v2 = phrase_vec(space, w2)
     mid = compute_midpoint(space, w1, w2)
-    n = min(600, len(space.words))
-    _, idxs = space.nn_index.kneighbors([mid], n_neighbors=n)
+    # Mirrors find_best_middle: search the playable submatrix, not the raw vocab.
+    # (The sklearn nn_index it used to query is gone — a matmul replaced it.)
+    idxs = _nearest_good_indices(space, mid, min(600, len(space.words)))
     out = []
-    for idx in idxs[0]:
+    for idx in idxs:
         word = space.words[idx]
         if word in exclude or not _is_good_idx(space, idx):
             continue
-        wv = space.matrix[idx]
+        wv = space.matrix[idx].astype(np.float32)
         s1 = float(np.dot(wv, v1))
         s2 = float(np.dot(wv, v2))
         out.append((word, min(s1, s2), s1, s2))

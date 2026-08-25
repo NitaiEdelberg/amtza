@@ -1,0 +1,38 @@
+# Keep the free Render instance awake during waking hours.
+#
+# A free Render service sleeps after 15 minutes with no traffic, and waking it
+# costs the next visitor a container boot plus a model load — the minute-long
+# "loading" screen this repo works so hard elsewhere to avoid. A cheap GET every
+# ten minutes keeps it resident.
+#
+# Deliberately NOT 24/7. A free instance gets 750 hours a month and a month is
+# 730 hours, so pinging around the clock spends the entire allowance on one
+# service and leaves nothing spare. 06:00–23:00 Israel time is ~17h/day (~520h a
+# month), which covers every plausible player and stays well inside the budget.
+#
+# GitHub's cron is best-effort and can run late under load; that is fine here,
+# since a missed ping costs one visitor a wake-up, not a broken service.
+name: keep-alive
+
+on:
+  schedule:
+    - cron: "*/10 3-20 * * *" # UTC — 06:00-23:00 Israel time
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping the API
+        run: |
+          # --max-time is generous on purpose: if the instance did fall asleep,
+          # this request is the one paying for the wake-up, and we want it to
+          # stay connected long enough to finish rather than hand the cost to a
+          # real player.
+          curl --fail --silent --show-error --max-time 180 \
+            "${API_URL%/}/health" | tee /dev/stderr
+        env:
+          API_URL: ${{ vars.API_URL || 'https://amtza-api.onrender.com' }}

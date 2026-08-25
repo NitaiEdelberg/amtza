@@ -4,8 +4,11 @@ import userEvent from "@testing-library/user-event";
 import App from "../App";
 
 // The boot path is what a first-time visitor actually experiences: a hosted
-// backend may be waking up (models_loaded false) or unreachable entirely. Both
-// used to look identical — an endless "loading models" spinner.
+// backend may be waking up (models still loading) or unreachable entirely.
+//
+// Neither may cost the player a full-screen spinner on arrival. The welcome
+// screen renders straight away and the wake-up, if there is one left to do,
+// happens on the Play button while they read the rules.
 function stubFetch(handler) {
   globalThis.fetch = vi.fn(handler);
 }
@@ -17,29 +20,43 @@ afterEach(() => {
 });
 
 describe("App boot states", () => {
-  it("shows the loading screen until the models are ready", async () => {
-    stubFetch(() => ok({ status: "ok", models_loaded: false }));
+  it("shows the welcome screen immediately, even while the models load", async () => {
+    stubFetch(() => ok({ status: "ok", models_loaded: false, languages: [] }));
     render(<App />);
-    expect(await screen.findByText(/טוען מודלי שפה/)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /בואו נשחק/ })).toBeInTheDocument();
+    expect(screen.queryByText(/טוען מודלי שפה/)).not.toBeInTheDocument();
   });
 
-  it("moves to the welcome screen once the models load", async () => {
-    stubFetch(() => ok({ status: "ok", models_loaded: true }));
+  it("shows the welcome screen even when the server is unreachable", async () => {
+    // No dead spinner: an unreachable backend is indistinguishable from a sleeping
+    // one at this point, and either way the rules are worth reading.
+    stubFetch(() => Promise.reject(new Error("network down")));
     render(<App />);
     expect(await screen.findByRole("button", { name: /בואו נשחק/ })).toBeInTheDocument();
   });
 
-  it("reports an unreachable server instead of spinning forever", async () => {
-    // Every poll fails; after several consecutive failures the UI should say so
-    // and offer a retry rather than claiming models are loading.
-    stubFetch(() => Promise.reject(new Error("network down")));
+  it("waits on the Play button when the language isn't loaded yet", async () => {
+    // Hebrew loads before English, so readiness is per language: asking to play
+    // Hebrew must not wait out the English load.
+    const user = userEvent.setup();
+    let heReady = false;
+    stubFetch((url) => {
+      const u = String(url);
+      if (u.includes("/health")) {
+        return ok({ status: "ok", models_loaded: false, languages: heReady ? ["he"] : [] });
+      }
+      if (u.includes("/pair")) return ok({ word1: "שמש", word2: "ירח", language: "he" });
+      return ok({ valid: true, canonical: "", language: "he", in_vocab: true, suggestions: [] });
+    });
     render(<App />);
 
-    expect(
-      await screen.findByText(/אין חיבור לשרת/, {}, { timeout: 20000 })
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /נסו שוב/ })).toBeInTheDocument();
-  }, 25000);
+    await user.click(await screen.findByRole("button", { name: /בואו נשחק/ }));
+    expect(await screen.findByRole("button", { name: /מעירים את השרת/ })).toBeInTheDocument();
+
+    heReady = true;
+    // Once Hebrew is in, the game starts on its own — no second click.
+    expect(await screen.findByRole("textbox", {}, { timeout: 10000 })).toBeInTheDocument();
+  }, 15000);
 
   it("lets a player abandon a long game without reloading the page", async () => {
     // Measured: ~6% of games run past 20 rounds. Until this existed, the only way

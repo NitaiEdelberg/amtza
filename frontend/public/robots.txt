@@ -1,0 +1,6 @@
+# Everything here is a single public page — there is nothing to keep out of an index.
+User-agent: *
+Allow: /
+
+# Update alongside the SITE_URL comment in index.html if the domain ever changes.
+Sitemap: https://amtza.netlify.app/sitemap.xml

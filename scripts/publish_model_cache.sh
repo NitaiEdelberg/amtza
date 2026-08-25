@@ -3,9 +3,9 @@
 # backend can download them instead of rebuilding from raw fastText vectors.
 #
 # The problem this solves: a free container has no persistent disk. Without this,
-# every cold start re-streams ~670MB of vectors, parses them, and recomputes the
-# good-word masks — several minutes, repeated, for a result that never changes.
-# The finished artifacts are 174MB and load in seconds.
+# every cold start re-streams ~670MB of raw fastText vectors and parses them —
+# minutes, repeated, for a result that never changes. The finished artifacts are
+# ~180MB and load in seconds.
 #
 # Run this once locally (you already have the caches), then set PREBUILT_CACHE_URL
 # on the backend host to the printed URL.
@@ -15,7 +15,10 @@ set -euo pipefail
 
 TAG="${1:-models-v1}"
 CACHE_DIR="${MODEL_CACHE_DIR:-$HOME/.amtza/models}"
-FILES=(he_v3.npy he_v3_words.pkl he_v8_good.npy en_v3.npy en_v3_words.pkl en_v8_good.npy)
+# The good-word masks are no longer published: the playable pool is built from
+# backend/data/{lang}_playable.txt at load, which is a set lookup rather than the
+# filter pass that used to be worth caching.
+FILES=(he_v4.npy he_v4_words.pkl en_v4.npy en_v4_words.pkl)
 
 command -v gh >/dev/null || { echo "error: the GitHub CLI (gh) is required"; exit 1; }
 
@@ -40,8 +43,8 @@ python3 - "$CACHE_DIR" <<'PY'
 import sys, numpy as np, pathlib
 cache = pathlib.Path(sys.argv[1])
 for lang in ("he", "en"):
-    m = np.load(cache / f"{lang}_v3.npy", mmap_mode="r")
-    assert m.dtype == np.float16, f"{lang}_v3.npy is {m.dtype}, expected float16"
+    m = np.load(cache / f"{lang}_v4.npy", mmap_mode="r")
+    assert m.dtype == np.float16, f"{lang}_v4.npy is {m.dtype}, expected float16"
     print(f"  {lang}: {m.shape[0]:,} x {m.shape[1]} {m.dtype} OK")
 PY
 
@@ -52,7 +55,7 @@ if gh release view "$TAG" >/dev/null 2>&1; then
 else
   gh release create "$TAG" "${FILES[@]/#/$CACHE_DIR/}" \
     --title "Prebuilt embedding caches" \
-    --notes "float16 fastText matrices, vocabularies and good-word masks for the amtza backend. Point PREBUILT_CACHE_URL at this release to skip rebuilding them on every cold start."
+    --notes "float16 fastText matrices, vocabularies for the amtza backend. Point PREBUILT_CACHE_URL at this release to skip rebuilding them on every cold start."
 fi
 
 REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"

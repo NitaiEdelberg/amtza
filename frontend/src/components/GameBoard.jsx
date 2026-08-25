@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import AdSlot from "./AdSlot";
 import WordPair from "./WordPair";
 import GuessInput from "./GuessInput";
 import RevealCard from "./RevealCard";
@@ -110,6 +111,14 @@ export default function GameBoard({
 
       {history.length > 0 && gamePhase === "guessing" && (
         <PathHistory history={history} language={currentPair?.language} />
+      )}
+
+      {/* Only from round two: the first round is the whole first impression, and
+          a player who has not yet seen how the game works is the one most likely
+          to leave. Below the board rather than above it, so it never sits between
+          the word pair and the input. */}
+      {roundNum > 1 && (
+        <AdSlot label={isHe ? "פרסומת" : "Advertisement"} />
       )}
     </div>
   );
