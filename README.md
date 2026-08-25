@@ -238,9 +238,13 @@ Open Graph / Twitter tags and JSON-LD (`VideoGame` + `HowTo`). A `<noscript>` bl
 and the `SiteFooter` component supply the actual prose — a game board is otherwise
 two runtime-generated nouns and a score, which gives a crawler nothing to index.
 
-`public/robots.txt` and `public/sitemap.xml` are served as-is. **The deployed origin
-appears in exactly three places** — those two files and the `SITE_URL` comment in
-`index.html`. Change them together when moving to a real domain.
+`public/robots.txt` and `public/sitemap.xml` are served as-is. The deployed origin is
+baked into all three files (canonical, hreflang, og:image, JSON-LD `@id`, sitemap
+`<loc>`) because crawlers read them without running the app. Move domains with:
+
+```bash
+./scripts/set_site_url.sh https://yourdomain.com
+```
 
 Regenerate the link-preview card after changing the title or tagline:
 
@@ -267,10 +271,16 @@ bans happen. The AdSense script loads lazily on first render, so a visitor who n
 finishes a round never pays for it, and an ad blocker leaves the reserved space
 empty rather than breaking the game.
 
-Two things to know before applying: AdSense wants a site with real content and some
-traffic, so apply *after* deploying — and `ads.txt` is read per registrable domain,
-which means it does nothing on a `*.netlify.app` subdomain. Serving ads is the real
-argument for buying a domain.
+**A custom domain is a hard prerequisite, not a nice-to-have.** Since 2023 AdSense
+verifies ownership at the *parent domain*, and approves subdomains by inheriting the
+parent's status. The parent of `amtza.netlify.app` is `netlify.app`, which belongs to
+Netlify — there is no DNS record to add and no root page to put the verification
+snippet on, so it can never be approved. Same reason `mysite.wordpress.com` can't run
+AdSense. Buy a domain, run `./scripts/set_site_url.sh https://yourdomain.com`, then
+apply.
+
+The other thing: apply *after* deploying. AdSense wants a site with real content, and
+"low value content" is the standard first rejection.
 
 ---
 

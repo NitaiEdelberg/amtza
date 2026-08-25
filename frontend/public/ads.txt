@@ -7,6 +7,7 @@
 #
 # google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0
 #
-# Note: on a *.netlify.app subdomain this file has no effect — ads.txt is read
-# per registrable domain, and netlify.app belongs to Netlify. Serving ads is a
-# real reason to put the game on a domain of your own.
+# Note: this file does nothing on a *.netlify.app subdomain, and neither does
+# anything else you try — ads.txt is read per registrable domain, and AdSense
+# verifies ownership at the parent domain (netlify.app), which belongs to Netlify.
+# A domain of your own is a prerequisite for serving ads at all, not an upgrade.
