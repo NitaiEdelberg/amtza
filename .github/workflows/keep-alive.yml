@@ -1,22 +1,46 @@
-# Keep the free Render instance awake during waking hours.
+# Keep the free Render instance awake during the hours people actually play.
 #
-# A free Render service sleeps after 15 minutes with no traffic, and waking it
-# costs the next visitor a container boot plus a model load — the minute-long
-# "loading" screen this repo works so hard elsewhere to avoid. A cheap GET every
-# ten minutes keeps it resident.
+# A free Render service sleeps after 15 minutes with no traffic. Waking this one
+# costs a container boot *plus* a model load — the minute-long "loading" screen
+# this repo works so hard elsewhere to avoid. A cheap GET every ten minutes keeps
+# it resident.
 #
-# Deliberately NOT 24/7. A free instance gets 750 hours a month and a month is
-# 730 hours, so pinging around the clock spends the entire allowance on one
-# service and leaves nothing spare. 06:00–23:00 Israel time is ~17h/day (~520h a
-# month), which covers every plausible player and stays well inside the budget.
+# ── THE BUDGET IS ACCOUNT-WIDE, NOT PER SERVICE ──────────────────────────────
+# Render gives 750 free instance-hours a month across EVERY free service in the
+# workspace, and when they run out it suspends ALL of them until the 1st. This
+# file used to claim a 17h/day window (~520h) "stays well inside the budget",
+# which is true only if this is the sole service. It is not. Adding up what the
+# three keep-alives in three separate repos were each claiming in isolation:
 #
-# GitHub's cron is best-effort and can run late under load; that is fine here,
-# since a missed ping costs one visitor a wake-up, not a broken service.
+#     amtza-api           18h/day    540h        <- this file
+#     nitaiswebsite       13h/day    390h
+#     jailbreak-backend   13h/day    390h
+#                                   ------
+#                                   1320h  against a 750h budget (1.8x over)
+#
+# Nothing broke only because GitHub was silently dropping most of the runs (the
+# observed interval was ~2h, not 10 min). Making the cron reliable without also
+# fixing this would have suspended the whole portfolio around day 17 of a month.
+#
+# Current allocation, ~540h total, leaving ~210h for organic traffic:
+#     amtza-api           10h/day    300h        <- this file, the biggest slice
+#     nitaiswebsite        4h/day    120h
+#     jailbreak-backend    4h/day    120h
+#
+# amtza gets the most because its cold start is the worst: with no
+# PREBUILT_CACHE_URL set it re-streams and re-parses ~670MB of vectors, which is
+# minutes rather than the ~50s the others pay. Publishing that cache (see
+# README → Deployment) drops it to ~2s, at which point this window can shrink
+# and hand its hours back.
+#
+# GitHub's cron is best-effort and drops runs under load, which is worst at the
+# top of the hour — hence the :03 offset rather than */10. A missed ping costs
+# one visitor a wake-up, not a broken service.
 name: keep-alive
 
 on:
   schedule:
-    - cron: "*/10 3-20 * * *" # UTC — 06:00-23:00 Israel time
+    - cron: "3-59/10 6-15 * * *" # UTC — 09:00-19:00 Israel time
   workflow_dispatch: {}
 
 permissions: {}
