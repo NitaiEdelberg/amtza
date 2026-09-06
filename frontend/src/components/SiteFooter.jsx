@@ -20,8 +20,8 @@ export default function SiteFooter({ language = "he" }) {
           <section>
             <h2>מה זה אמצע?</h2>
             <p>
-              אמצע הוא משחק מילים שיתופי בעברית ובאנגלית. המשחק מציג שתי מילים —
-              נניח <strong>שמש</strong> ו<strong>ירח</strong> — ואתם כותבים את המילה
+              אמצע הוא משחק מילים שיתופי בעברית ובאנגלית. המשחק מציג שתי מילים,
+              נניח <strong>שמש</strong> ו<strong>ירח</strong>, ואתם כותבים את המילה
               שלדעתכם נמצאת בדיוק באמצע ביניהן מבחינת המשמעות. במקביל, גם המחשב
               בוחר מילה, בלי שאף אחד רואה את הבחירה של השני.
             </p>
@@ -43,7 +43,7 @@ export default function SiteFooter({ language = "he" }) {
             </ol>
             <p>
               רוב המשחקים נגמרים תוך ארבעה עד שישה סיבובים. אם נתקעתם, יש כפתור רמז
-              שמציע כמה כיוונים — בלי לגלות את התשובה של המחשב.
+              שמציע כמה כיוונים, בלי לגלות את התשובה של המחשב.
             </p>
           </section>
 
@@ -52,7 +52,7 @@ export default function SiteFooter({ language = "he" }) {
             <p>
               לכל מילה יש ייצוג מספרי שנלמד מתוך ויקיפדיה העברית, כך שמילים בעלות
               משמעות דומה יושבות קרוב זו לזו. המחשב מחשב את הנקודה שבאמצע בין שתי
-              המילים ומחפש סביבה את המילה המאוזנת ביותר — כזו שקשורה לשתי המילים
+              המילים ומחפש סביבה את המילה המאוזנת ביותר, כזו שקשורה לשתי המילים
               במידה דומה, ולא מילה שנצמדת רק לאחת מהן. הוא בוחר רק מתוך רשימה של
               מילים יומיומיות, כדי שהתשובה תמיד תהיה מילה שמכירים.
             </p>
@@ -67,7 +67,7 @@ export default function SiteFooter({ language = "he" }) {
           <section>
             <h2>What is Amtza?</h2>
             <p>
-              Amtza — Hebrew for "middle" — is a cooperative word game in Hebrew and
+              Amtza, Hebrew for "middle", is a cooperative word game in Hebrew and
               English. You are shown two words, say <strong>sun</strong> and{" "}
               <strong>moon</strong>, and you type the word you think sits exactly
               between them in meaning. The computer picks its own middle word at the
@@ -92,7 +92,7 @@ export default function SiteFooter({ language = "he" }) {
             </ol>
             <p>
               Most games finish in four to six rounds. If you get stuck, the hint
-              button offers a few directions — without giving away the computer's
+              button offers a few directions, without giving away the computer's
               answer.
             </p>
           </section>
@@ -103,7 +103,7 @@ export default function SiteFooter({ language = "he" }) {
               Every word has a numeric representation learned from a large body of
               text, so words with similar meanings sit near each other. The computer
               finds the point halfway between the two words and looks for the most
-              balanced word around it — one related to both words roughly equally,
+              balanced word around it: one related to both words roughly equally,
               rather than one glued to a single side. It only ever answers from a
               curated list of everyday words, so the answer is always something you
               would recognise.

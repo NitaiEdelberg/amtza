@@ -71,8 +71,8 @@ export default function App() {
       if (!ready) {
         setStartError(
           lang === "he"
-            ? "השרת לא מגיב. הוא כנראה נרדם — נסו שוב בעוד רגע."
-            : "The server isn't responding. It may be asleep — try again in a moment."
+            ? "השרת לא מגיב. הוא כנראה נרדם. נסו שוב בעוד רגע."
+            : "The server isn't responding. It may be asleep. Try again in a moment."
         );
         setIsLoading(false);
         return;
@@ -229,8 +229,8 @@ export default function App() {
                         ? "אין תשובה מהשרת. עוד מנסים…"
                         : "No answer yet. Still trying…")
                     : (selectedLang === "he"
-                        ? "הפעם הראשונה ביום לוקחת כדקה — השרת נרדם כשאף אחד לא משחק"
-                        : "The first visit of the day takes about a minute — the server sleeps when nobody is playing")}
+                        ? "הפעם הראשונה ביום לוקחת כדקה. השרת נרדם כשאף אחד לא משחק"
+                        : "The first visit of the day takes about a minute. The server sleeps when nobody is playing")}
                 </p>
               )}
               {startError && (
