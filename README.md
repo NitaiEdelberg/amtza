@@ -17,6 +17,8 @@ pinned: false
      The live backend runs on Render — see Deployment. -->
 
 
+**▶ Play it: [amtza.netlify.app](https://amtza.netlify.app)** (the backend sleeps on Render's free tier, so the first round of the day takes a few seconds to wake up)
+
 > *Inspired by the Israeli word game "אמצע" played between friends.*
 
 ---
