@@ -18,6 +18,7 @@ import logging  # noqa: E402
 from contextlib import asynccontextmanager  # noqa: E402
 from typing import Dict, List, Optional  # noqa: E402
 
+import numpy as np  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 from fastapi import FastAPI, HTTPException  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
@@ -234,6 +235,19 @@ def guess(req: GuessRequest):
 
     computer_vec = get_word_vector(space, computer_guess)
 
+    # Numbers behind the pick, for the "why this word?" panel.
+    #
+    # No model is asked to explain anything: the choice genuinely IS these two
+    # cosines, so reporting them is the whole truth rather than a plausible story
+    # about it. Two dot products against vectors already in hand.
+    pair_v1 = phrase_vec(space, req.word1)
+    pair_v2 = phrase_vec(space, req.word2)
+    reason = {
+        "similarity_to_word1": round(float(np.dot(computer_vec, pair_v1)), 3),
+        "similarity_to_word2": round(float(np.dot(computer_vec, pair_v2)), 3),
+        "considered": int(len(space.good_indices)) if space.good_indices is not None else None,
+    }
+
     result = build_round_result(
         round_num=req.round_num,
         word1=req.word1,
@@ -254,6 +268,7 @@ def guess(req: GuessRequest):
         "player_computer_similarity": result.player_computer_similarity,
         "is_won": result.is_won,
         "new_pair": [result.player_guess, result.computer_guess],
+        "computer_reason": reason,
         "funny_message": result.funny_message,
         "win_message": result.win_message,
         "language": result.language,

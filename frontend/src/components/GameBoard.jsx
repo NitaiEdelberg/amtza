@@ -92,6 +92,9 @@ export default function GameBoard({
             proximity={lastRound.player_computer_similarity}
             lang={lastRound.language}
             visible={true}
+            word1={currentPair.word1}
+            word2={currentPair.word2}
+            reason={lastRound.computer_reason}
           />
           <SimilarityMeter
             similarity={lastRound.player_similarity}

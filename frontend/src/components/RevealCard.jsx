@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import WhyPanel from "./WhyPanel";
 
 function isHebrew(text) {
   return /[֐-׿]/.test(text ?? "");
@@ -27,7 +28,8 @@ function FlipCard({ label, word, color, delay = 0, flipped }) {
   );
 }
 
-export default function RevealCard({ playerGuess, computerGuess, proximity, lang, visible }) {
+export default function RevealCard({ playerGuess, computerGuess, proximity, lang, visible,
+                                    word1, word2, reason }) {
   const [flipped, setFlipped] = useState(false);
   const [showProximity, setShowProximity] = useState(false);
   const [barWidth, setBarWidth] = useState(0);
@@ -71,6 +73,16 @@ export default function RevealCard({ playerGuess, computerGuess, proximity, lang
             />
           </div>
         </div>
+      )}
+
+      {showProximity && (
+        <WhyPanel
+          word1={word1}
+          word2={word2}
+          computerGuess={computerGuess}
+          reason={reason}
+          lang={lang}
+        />
       )}
     </div>
   );

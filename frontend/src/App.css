@@ -751,3 +751,141 @@ body {
 @media (max-width: 600px) {
   .site-footer { padding: 2rem 1.25rem 3rem; font-size: 0.9rem; }
 }
+
+/* ── How it works (welcome-screen demo) ────────────────────────────────────────
+   The rules list explains the game correctly and people still arrive unsure,
+   because the mechanic is a motion — your word and the computer's become the
+   next pair — and a list can't show motion. Steps fade in on a timer rather
+   than all at once, which is the whole point; without the stagger this is just
+   another static block. */
+.howto {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.1rem 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  /* Fixed height: the steps appear one by one, and without this the card grows
+     as they land and shoves the Play button down the screen mid-read. */
+  min-height: 15.5rem;
+  justify-content: center;
+}
+
+.howto__title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text2);
+  margin-bottom: 0.15rem;
+}
+
+.howto__row,
+.howto__line,
+.howto__arrow,
+.howto__punch {
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.45s ease, transform 0.45s ease;
+}
+.howto__row.in,
+.howto__line.in,
+.howto__arrow.in,
+.howto__punch.in {
+  opacity: 1;
+  transform: none;
+}
+
+.howto__row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.howto__chip {
+  padding: 0.35rem 0.8rem;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 1rem;
+}
+.howto__chip--blue {
+  background: rgba(108,142,255,0.18);
+  border: 1px solid rgba(108,142,255,0.35);
+  color: #a5b9ff;
+}
+.howto__chip--purple {
+  background: rgba(167,139,250,0.18);
+  border: 1px solid rgba(167,139,250,0.35);
+  color: #c4b0ff;
+}
+
+.howto__vs { color: var(--text2); }
+
+.howto__line {
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+  font-size: 0.92rem;
+}
+.howto__who { color: var(--text2); }
+.howto__line strong { color: var(--text); font-weight: 700; }
+
+.howto__arrow { color: var(--text2); font-size: 1.2rem; line-height: 1; }
+
+.howto__punch {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--teal);
+  margin-top: 0.2rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .howto__row, .howto__line, .howto__arrow, .howto__punch {
+    transition: none;
+  }
+}
+
+/* ── "Why that word?" ──────────────────────────────────────────────────────── */
+.why { margin-top: 0.9rem; text-align: center; }
+
+.why__toggle {
+  font-size: 0.85rem;
+  padding: 0.35rem 0.9rem;
+  opacity: 0.75;
+}
+.why__toggle:not(:disabled):hover { opacity: 1; }
+
+.why__body {
+  margin-top: 0.7rem;
+  padding: 0.85rem 1rem;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.88rem;
+  line-height: 1.65;
+  color: var(--text2);
+  text-align: start;
+}
+.why__body strong { color: var(--text); }
+
+.why__scores {
+  list-style: none;
+  margin: 0.6rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.why__scores li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--bg2);
+  border-radius: 8px;
+  padding: 0.3rem 0.6rem;
+}
+.why__scores span { color: var(--text); font-weight: 600; }
+.why__scores b { margin-inline-start: auto; color: var(--blue); }
+
+.why__note { font-size: 0.82rem; opacity: 0.85; }

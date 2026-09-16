@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { checkHealth, getRandomPair, submitGuess, getHint, waitForLanguage } from "./api";
 import GameBoard from "./components/GameBoard";
+import HowItWorks from "./components/HowItWorks";
 import SiteFooter from "./components/SiteFooter";
 import WinScreen from "./components/WinScreen";
 import "./App.css";
@@ -180,6 +181,7 @@ export default function App() {
         {gamePhase === "idle" && (
           <div className="idle-screen">
             <div className="idle-screen__card">
+              <HowItWorks lang={selectedLang} />
               {selectedLang === "he" ? (
                 <>
                   <h2 dir="rtl">ברוכים הבאים! 👋</h2>

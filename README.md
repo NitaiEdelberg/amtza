@@ -43,7 +43,7 @@ converges.
 ## The playable word list
 
 `backend/data/he_playable.txt` and `en_playable.txt` are the pool the computer may
-answer from — about 1,400 Hebrew and 1,800 English everyday nouns and adjectives.
+answer from — about 2,000 Hebrew and 2,300 English everyday nouns and adjectives.
 
 They exist because filtering could not do this job. Morphological rules are good at
 word *shape* and reliably reject בים, לעץ, נישואיה, running, biggest. They are
@@ -111,7 +111,7 @@ Open http://localhost:5173. The Vite proxy forwards API calls to `localhost:8000
 
 ### Tests
 
-114 backend tests, none of which need the models, and 29 frontend tests:
+114 backend tests, none of which need the models, and 35 frontend tests:
 
 ```bash
 cd backend && ./venv/bin/python -m unittest discover -s test -v
@@ -125,11 +125,34 @@ harness, which loads the real vectors:
 ./backend/venv/bin/python scripts/playtest.py survey he      # every starting pair
 ./backend/venv/bin/python scripts/playtest.py inspect en cat dog
 ./backend/venv/bin/python scripts/playtest.py pairs he חורף קיץ  בוקר לילה
-./backend/venv/bin/python scripts/simulate_games.py --games-per-pair 10
+./backend/venv/bin/python scripts/eval_quality.py --games-per-pair 4
 ```
 
-Last measured over 330 simulated games: 98% converge, median 4 rounds, average 6.0,
-3.0% run past 20.
+`eval_quality.py` is the one to use when changing the word lists or the scoring.
+It reports three things, not just speed, because the two ways a pool can be wrong
+pull in opposite directions — too obscure reads as *weird*, too small reads as
+*repetitive*:
+
+| | he | en |
+|---|---|---|
+| converge within 30 rounds | 63% | 93% |
+| median rounds | 13 | 6 |
+| distinct answers | 16% | 28% |
+| answers barely related to either word | 0.0% | 0.0% |
+
+**Hebrew converges far worse than English, and it is not the vocabulary.** The
+win bar is one number for both languages, and the two languages do not share a
+similarity scale. English near-synonyms land at 0.55–0.78 (`sea`/`ocean` 0.78,
+`car`/`vehicle` 0.73), so the 0.72 floor is reachable. Hebrew near-synonyms land
+at 0.25–0.66 (`ילד`/`נער` 0.66, `מלך`/`מלכה` 0.47, `בית`/`דירה` 0.25) — almost
+never 0.72 — so Hebrew wins depend on an exact match, and the computer's pool
+holds the player's exact word only ~12% of the time against English's ~29%.
+
+Simply lowering the Hebrew number does not work: Hebrew *antonyms* overlap the
+same band (`חם`/`קר` 0.68, `יום`/`לילה` 0.46), so any bar loose enough to accept
+real synonyms also declares the starting pair a win. A scale-free win condition —
+"the computer's word is among the nearest to yours" — would fix it properly.
+Measured, not guessed, and not yet implemented.
 
 ### Performance & startup notes
 
@@ -192,6 +215,27 @@ PREBUILT_CACHE_URL=https://github.com/<you>/amtza/releases/download/models-v1
 > release holding `*_v3.npy` will be ignored, and every cold start will re-stream
 > and re-parse the raw vectors. Re-run `publish_model_cache.sh` after deploying
 > this change.
+
+### Concurrency
+
+Measured, since "will it survive being shared in a group chat" is the question
+that matters. A guess costs **2.0ms of CPU** with BLAS pinned to one thread —
+without the pinning in `main.py` the same guess costs 61ms of CPU across sixteen
+cores, which is why that pinning is there. End to end, including FastAPI and JSON,
+a request costs ~7.7ms of CPU.
+
+| | |
+|---|---|
+| 40 simultaneous players, one core | p50 20ms, p99 103ms, 0 errors |
+| 100 simultaneous players, one core | p50 257ms, p99 370ms, 0 errors |
+| sustained capacity at 0.1 CPU | ~13 req/s |
+
+40 players guessing every 20 seconds is 2 req/s — about 15% of a free instance.
+Memory doesn't scale with players either: the model is shared, and the whole
+process sits at 290MB. **The thing that would actually break a "40 people at once"
+moment is the cold start, not the load** — if the instance is asleep when a link
+is shared, everyone waits out one wake-up together. That is what the keep-alive
+below is for.
 
 ### Not being asleep in the first place
 
@@ -306,7 +350,7 @@ amtza/
 │   ├── main.py          API routes
 │   ├── embeddings.py    fastText loading + midpoint math
 │   ├── game.py          win detection + funny messages
-│   ├── word_pairs.py    curated starting pairs (38 he + 42 en)
+│   ├── word_pairs.py    curated starting pairs (105 he + 108 en)
 │   └── data/            he_playable.txt, en_playable.txt — the answer pool
 ├── frontend/
 │   ├── public/          robots.txt, sitemap.xml, ads.txt, og-image.png
@@ -319,6 +363,7 @@ amtza/
 └── scripts/
     ├── download_models.sh
     ├── make_og_image.py
+    ├── eval_quality.py  convergence + variety + weirdness metrics
     └── playtest.py      audition pairs / inspect the computer's picks
 ```
 
