@@ -22,3 +22,6 @@ dist/
 .vscode/
 .idea/
 *.swp
+
+# Transient state for scripts/play_session.py (one hand-played sitting).
+scripts/.play_session.json
