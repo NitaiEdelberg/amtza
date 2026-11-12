@@ -18,11 +18,21 @@ separately for starting pairs (the first impression) and mid-game pairs (where
 the game actually wanders), per language. "mid-clear" drops the mid-game pairs
 labelled low-confidence: over half of them, where people would scatter anyway.
 
+REGRESSION GATE (CI). --check compares against scripts/data/eval_baseline.json and
+exits non-zero if any split lost more than --tolerance pairs. The tolerance is in
+pairs, not percent, because the mid-game splits are small (n=21-50): one pair there
+is 2-5 points, and a percentage tolerance would be either deaf on the big splits or
+trigger-happy on the small ones. After an intended improvement, refresh the
+baseline with --write-baseline and commit it alongside the change that earned it.
+
 Usage:
     backend/venv/bin/python scripts/eval_human.py
     backend/venv/bin/python scripts/eval_human.py --misses he
+    backend/venv/bin/python scripts/eval_human.py --check
+    backend/venv/bin/python scripts/eval_human.py --write-baseline
 """
 import argparse
+import json
 import os
 import sys
 
@@ -35,6 +45,8 @@ from embeddings import (  # noqa: E402
 from game import same_word  # noqa: E402
 
 LABELS = os.path.join(os.path.dirname(__file__), "data", "human_labels.tsv")
+BASELINE = os.path.join(os.path.dirname(__file__), "data", "eval_baseline.json")
+SPLITS = ("start", "mid", "mid-clear")
 N_START = 213
 
 
@@ -59,7 +71,7 @@ def evaluate(rows, pick=find_best_middle, spaces=None):
         if lang not in spaces:
             spaces[lang] = load_or_download_sync(lang)
         space = spaces[lang]
-        for split in ("start", "mid", "mid-clear"):
+        for split in SPLITS:
             hits, misses, n = 0, [], 0
             for r in rows:
                 if r["lang"] != lang or r["start"] != (split == "start"):
@@ -77,22 +89,77 @@ def evaluate(rows, pick=find_best_middle, spaces=None):
                     hits += 1
                 else:
                     misses.append((r["w1"], r["w2"], word, answers[0] if answers else ""))
-            out[(lang, split)] = {"n": n, "hit3": hits / n if n else 0.0, "misses": misses}
+            out[(lang, split)] = {"n": n, "hits": hits, "hit3": hits / n if n else 0.0,
+                                  "misses": misses}
     return out
 
 
 def show(res, label=""):
     cells = " | ".join(f"{lang} {split} {res[(lang, split)]['hit3']:.0%} (n={res[(lang, split)]['n']})"
-                       for lang in ("he", "en") for split in ("start", "mid", "mid-clear"))
+                       for lang in ("he", "en") for split in SPLITS)
     print(f"{label:28s} {cells}")
+
+
+def check(res, baseline, tolerance):
+    """Rows of (name, baseline hits, current hits, n, ok) and whether all passed."""
+    rows, ok_all = [], True
+    for lang in ("he", "en"):
+        for split in SPLITS:
+            key = f"{lang}-{split}"
+            cur = res[(lang, split)]
+            base = baseline.get(key)
+            if base is None:
+                continue
+            if base["n"] != cur["n"]:
+                # The labels or pairs changed; comparing counts would be meaningless.
+                rows.append((key, base["hits"], cur["hits"], cur["n"], False))
+                ok_all = False
+                continue
+            ok = cur["hits"] >= base["hits"] - tolerance
+            ok_all &= ok
+            rows.append((key, base["hits"], cur["hits"], cur["n"], ok))
+    return rows, ok_all
+
+
+def summary_markdown(rows, tolerance):
+    lines = ["### Human-match eval (computer's word among a typical speaker's top 3)", "",
+             "| split | baseline | now | n | |", "|---|---|---|---|---|"]
+    for key, base, cur, n, ok in rows:
+        lines.append(f"| {key} | {base} ({base / n:.0%}) | {cur} ({cur / n:.0%}) | {n} | "
+                     f"{'✅' if ok else '❌'} |")
+    lines.append("")
+    lines.append(f"Fails when a split loses more than {tolerance} pairs against "
+                 f"`scripts/data/eval_baseline.json`.")
+    return "\n".join(lines) + "\n"
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--misses", choices=["he", "en"], help="list the misses for one language")
+    ap.add_argument("--check", action="store_true", help="fail on regression against the baseline")
+    ap.add_argument("--tolerance", type=int, default=2, help="pairs a split may lose (default 2)")
+    ap.add_argument("--write-baseline", action="store_true", help="record current results as baseline")
     args = ap.parse_args()
     res = evaluate(load_labels())
     show(res, "production")
+    if args.write_baseline:
+        data = {f"{lang}-{split}": {"hits": res[(lang, split)]["hits"], "n": res[(lang, split)]["n"]}
+                for lang in ("he", "en") for split in SPLITS}
+        with open(BASELINE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+        print(f"wrote {BASELINE}")
+    if args.check:
+        with open(BASELINE, encoding="utf-8") as f:
+            baseline = json.load(f)
+        rows, ok = check(res, baseline, args.tolerance)
+        md = summary_markdown(rows, args.tolerance)
+        print(md)
+        if os.getenv("GITHUB_STEP_SUMMARY"):
+            with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+                f.write(md)
+        if not ok:
+            sys.exit(1)
     if args.misses:
         for split in ("start", "mid"):
             for w1, w2, got, want in res[(args.misses, split)]["misses"]:

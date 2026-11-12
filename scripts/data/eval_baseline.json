@@ -1,0 +1,26 @@
+{
+  "he-start": {
+    "hits": 54,
+    "n": 105
+  },
+  "he-mid": {
+    "hits": 6,
+    "n": 50
+  },
+  "he-mid-clear": {
+    "hits": 4,
+    "n": 21
+  },
+  "en-start": {
+    "hits": 79,
+    "n": 108
+  },
+  "en-mid": {
+    "hits": 20,
+    "n": 50
+  },
+  "en-mid-clear": {
+    "hits": 11,
+    "n": 25
+  }
+}
