@@ -59,7 +59,6 @@ wife
 partner
 couple
 friend
-neighbour
 neighbor
 stranger
 guest
@@ -178,7 +177,6 @@ beggar
 refugee
 immigrant
 tourist
-traveller
 traveler
 pilgrim
 nomad
@@ -687,7 +685,6 @@ hammer
 nail
 screw
 screwdriver
-saw
 drill
 wrench
 toolbox
@@ -714,7 +711,6 @@ skirt
 dress
 gown
 uniform
-pyjamas
 pajamas
 underwear
 sock
@@ -737,7 +733,6 @@ sleeve
 collar
 button
 jewel
-jewellery
 jewelry
 ring
 necklace
@@ -759,7 +754,6 @@ city
 town
 village
 suburb
-neighbourhood
 neighborhood
 street
 road
@@ -799,7 +793,6 @@ restaurant
 bar
 pub
 cafe
-theatre
 theater
 cinema
 museum
@@ -832,7 +825,6 @@ zoo
 circus
 airport
 station
-harbour
 harbor
 port
 dock
@@ -841,7 +833,6 @@ barracks
 camp
 ranch
 mill
-mine
 quarry
 dam
 fountain
@@ -1065,7 +1056,6 @@ envy
 shame
 guilt
 pride
-honour
 honor
 respect
 contempt
@@ -1105,7 +1095,6 @@ attention
 focus
 decision
 choice
-will
 need
 instinct
 character
@@ -1135,10 +1124,8 @@ compromise
 quarrel
 argument
 joke
-humour
 humor
 laughter
-tears
 
 # ── Society, law, money, work ──────────────────────────────────────────────────
 society
@@ -1186,7 +1173,6 @@ agreement
 treaty
 document
 signature
-licence
 license
 passport
 identity
@@ -1356,7 +1342,6 @@ trumpet
 saxophone
 harp
 organ
-theatre
 play
 scene
 role
@@ -1452,7 +1437,6 @@ score
 record
 training
 fitness
-warmup
 injury
 fan
 supporter
@@ -1513,7 +1497,6 @@ wheel
 engine
 motor
 fuel
-tyre
 tire
 brake
 accident
@@ -1522,7 +1505,6 @@ direction
 destination
 distance
 mile
-kilometre
 kilometer
 departure
 arrival
@@ -1626,7 +1608,6 @@ spear
 bow
 arrow
 shield
-armour
 armor
 helmet
 fortress
@@ -1635,7 +1616,6 @@ wall
 trench
 ambush
 attack
-defence
 defense
 retreat
 surrender
@@ -1715,7 +1695,6 @@ brass
 gold
 silver
 platinum
-aluminium
 aluminum
 lead
 tin
@@ -1753,7 +1732,6 @@ liquid
 solid
 powder
 foam
-colour
 color
 blue
 red
@@ -1765,7 +1743,6 @@ pink
 brown
 black
 white
-grey
 gray
 golden
 silver
@@ -1795,8 +1772,6 @@ amount
 quantity
 half
 quarter
-third
-dozen
 pair
 number
 
@@ -1851,7 +1826,6 @@ noisy
 full
 empty
 open
-closed
 hard
 soft
 smooth
@@ -1895,7 +1869,6 @@ fresh
 rotten
 ripe
 raw
-cooked
 alive
 dead
 real
@@ -1918,7 +1891,6 @@ vague
 safe
 dangerous
 free
-trapped
 near
 far
 deep
@@ -1930,7 +1902,6 @@ flat
 steep
 early
 late
-first
 last
 single
 double
@@ -2195,7 +2166,6 @@ tip
 kit
 bonus
 union
-teeth
 chat
 entrance
 smell
@@ -2508,7 +2478,6 @@ gecko
 locust
 firefly
 flea
-louse
 tick
 termite
 maggot
@@ -2525,17 +2494,9 @@ pecan
 pistachio
 sesame
 cornmeal
-semolina
 crumb
 yeast
 baking
-frying
-freezing
-melting
-slicing
-peeling
-grating
-blending
 cinnamon
 vanilla
 cardamom
@@ -2566,7 +2527,6 @@ okra
 squash
 pliers
 bolt
-solder
 gauge
 piston
 excavator
@@ -2576,7 +2536,6 @@ kayak
 barge
 dinghy
 skateboard
-sledge
 lace
 buckle
 polyester
@@ -2595,7 +2554,6 @@ moustache
 shaving
 bedding
 chandelier
-sideboard
 latch
 hinge
 threshold
@@ -2604,13 +2562,10 @@ irrigation
 nursery
 hoe
 spade
-sowing
-pruning
 harvest
 plough
 stable
 coop
-granary
 scythe
 jug
 cassette
@@ -2655,13 +2610,11 @@ barbecue
 camping
 crevice
 ravine
-basalt
 chalk
 tremor
 eruption
 landslide
 halo
-heatwave
 haze
 asteroid
 nebula
@@ -2676,11 +2629,8 @@ neutron
 mercury
 zinc
 nickel
-chromium
 titanium
 uranium
-sulphur
-phosphorus
 microbe
 algae
 skeleton
@@ -2712,7 +2662,6 @@ scholarship
 lecture
 dormitory
 atlas
-lexicon
 bibliography
 supplement
 lens
@@ -2724,3 +2673,35 @@ modem
 browser
 encryption
 shortcut
+
+# ── Category words (2026-11) ───────────────────────────────────────────────────
+# People answer with the category ("fruit", "insect") far more often than the
+# vectors do. These were the categories the association drafts used for 3+
+# different words but that the computer had no way to say.
+food
+insect
+mammal
+dairy
+seafood
+reptile
+footwear
+appliance
+relative
+royalty
+livestock
+entertainment
+amphibian
+primate
+utensil
+container
+beverage
+creature
+condiment
+stationery
+
+# ── Holidays (2026-11) ─────────────────────────────────────────────────────────
+# The one kind of proper noun people answer with all the time; listed deliberately.
+christmas
+halloween
+easter
+thanksgiving

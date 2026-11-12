@@ -40,46 +40,54 @@ def _effective_threshold(round_num: int) -> float:
     relaxed = WIN_THRESHOLD - HOMING_DECAY_PER_ROUND * (round_num - HOMING_GRACE_ROUNDS)
     return max(HOMING_MIN_THRESHOLD, relaxed)
 
+# Keyed to how close the two guesses were, the same number the reveal shows. They
+# used to be keyed to the player's distance from the pair's midpoint, a number the
+# screen no longer shows, so a play-tester got "close!" at 11% and "really close to
+# the middle" right before a word that had nothing to do with theirs. Nothing here
+# claims the computer was "more precise" either: there is no right answer to be
+# more precise about, and saying so read as smug.
 FUNNY_MESSAGES_HE = {
     "very_far": [
-        "אה... אתה בכיוון אחר לגמרי 🗺️",
-        "המחשב שואל: מאיזה כיוון הגעת? 🤔",
-        "זה... מעניין. אבל לא ממש קרוב 😅",
-        "הניחוש הזה יצא מאיפשהו מאוד רחוק 🚀",
-        "יצירתי! אבל... לא ממש באמצע 🎨",
+        "חשבנו על דברים שונים לגמרי 🗺️",
+        "כל אחד הלך לכיוון אחר. סיבוב הבא! 🔄",
+        "יצירתי! אבל המחשב חשב על משהו אחר לגמרי 🎨",
+        "רחוקים... אבל עכשיו יש זוג חדש לגמרי 🚀",
     ],
     "far": [
-        "מעניין... אבל לא ממש באמצע 🤷",
-        "ניסיון יפה, אבל המחשב לא מסכים 💻",
-        "אתה חושב בכיוון אחר מהמחשב 🔄",
-        "רחוק קצת מהאמצע, אבל לא נואש! 💪",
+        "עוד לא באותו ראש, אבל מתקרבים 🤷",
+        "כיוון שונה, נסו לחשוב על מה שמחבר את שתיהן 💡",
+        "לא באותו מקום, אבל לא נואש! 💪",
     ],
     "medium": [
-        "קרוב! אבל המחשב קצת יותר מדויק 🎯",
-        "לא רע! עוד ניסיון 🔥",
-        "ממש קרוב לאמצע — תמשיך! 🌟",
-        "אתה בכיוון הנכון! 👍",
+        "קרוב! אתם באותו תחום 🎯",
+        "חושבים דומה! עוד קצת 🔥",
+        "ממש מתקרבים 🌟",
+    ],
+    "close": [
+        "כמעט! כמעט אותה מילה 😮",
+        "וואו, הייתם ממש קרובים 🤏",
     ],
 }
 
 FUNNY_MESSAGES_EN = {
     "very_far": [
-        "Hmm... that came from a different galaxy 🚀",
-        "The computer is confused by your logic 🤔",
-        "Creative! But... not quite in the middle 🎨",
-        "That word wandered in from somewhere else entirely 🗺️",
+        "Totally different wavelengths 🗺️",
+        "You went one way, the computer went the other 🔄",
+        "Creative! The computer was thinking of something else entirely 🎨",
     ],
     "far": [
-        "Interesting direction, but not quite there 🤷",
-        "The computer begs to differ 💻",
-        "You're thinking differently than the algorithm 🔄",
-        "Not quite the middle — but don't give up! 💪",
+        "Not on the same page yet, but getting there 🤷",
+        "Different angles. Think about what links the two words 💡",
+        "Not there yet, keep going! 💪",
     ],
     "medium": [
-        "Close! The computer was a bit more precise 🎯",
-        "Not bad! Keep going 🔥",
-        "Almost at the midpoint — you're getting it! 🌟",
-        "Right direction! 👍",
+        "Close! You're in the same area 🎯",
+        "Great minds think alike... almost 🔥",
+        "Getting really close 🌟",
+    ],
+    "close": [
+        "So close! Almost the same word 😮",
+        "Ooh, nearly had it 🤏",
     ],
 }
 
@@ -98,7 +106,7 @@ EASTER_EGGS = {
 
 WIN_MESSAGES_HE = [
     "ניצחנו! 🎉 הגעתם לאמצע!",
-    "מושלם! 🌟 המחשב ואתה חשבתם אותו דבר!",
+    "מושלם! 🌟 המחשב ואתם חשבתם אותו דבר!",
     "יאללה! 🎊 הגעתם לאמצע ביחד!",
     "בום! 💥 זה בדיוק האמצע!",
 ]
@@ -106,7 +114,7 @@ WIN_MESSAGES_HE = [
 WIN_MESSAGES_EN = [
     "We did it! 🎉 Found the middle!",
     "Perfect! 🌟 You and the computer thought the same thing!",
-    "Yes! 🎊 Convergence achieved!",
+    "Yes! 🎊 We met in the middle!",
     "Boom! 💥 That's exactly the middle!",
 ]
 
@@ -142,6 +150,50 @@ class RoundResult:
     language: str
 
 
+_HE_FINAL_TO_REGULAR = {"ך": "כ", "ם": "מ", "ן": "נ", "ף": "פ", "ץ": "צ"}
+
+
+def _surface_forms(word: str) -> set:
+    """The word plus the forms a person means as "the same word".
+
+    Only regular, unambiguous inflections: the Hebrew definite article and the
+    ־ים/־ות plurals, English -s/-es/-ies. A player who types ילדים or apples against
+    the computer's ילד or apple said the same thing, and losing that round on
+    spelling feels like the game cheating. Irregular plurals (פרי/פירות) are left to
+    the similarity check; guessing them by rule would join unrelated words.
+    """
+    w = word.strip().lower()
+    forms = {w}
+    if any("\u0590" <= c <= "\u05ff" for c in w):
+        if w.startswith("ה") and len(w) >= 3:
+            forms.add(w[1:])
+        for base in list(forms):
+            stem = base[:-1] + _HE_FINAL_TO_REGULAR.get(base[-1], base[-1]) if base else base
+            forms.update({stem + "ים", stem + "ות"})
+            if base.endswith(("ה", "ת")) and len(base) >= 3:
+                forms.add(base[:-1] + "ות")
+            if base.endswith(("ים", "ות")) and len(base) >= 4:
+                forms.add(base[:-2])
+    else:
+        forms.update({w + "s", w + "es"})
+        if w.endswith("y") and len(w) >= 3:
+            forms.add(w[:-1] + "ies")
+        if w.endswith("ies") and len(w) >= 5:
+            forms.add(w[:-3] + "y")
+        elif w.endswith("es") and len(w) >= 4:
+            forms.add(w[:-2])
+        if w.endswith("s") and len(w) >= 4:
+            forms.add(w[:-1])
+    return forms
+
+
+def same_word(a: str, b: str) -> bool:
+    """Whether two guesses are the same word up to a regular plural or article."""
+    if a.strip().lower() == b.strip().lower():
+        return True
+    return b.strip().lower() in _surface_forms(a) or a.strip().lower() in _surface_forms(b)
+
+
 def check_win(
     player_word: str,
     computer_word: str,
@@ -149,13 +201,14 @@ def check_win(
     computer_vec: "np.ndarray",
     round_num: int = 1,
 ) -> bool:
-    if player_word.lower() == computer_word.lower():
+    if same_word(player_word, computer_word):
         return True
     sim = float(np.dot(player_vec, computer_vec))
     return sim > _effective_threshold(round_num)
 
 
 def get_funny_message(similarity: float, lang: str, word1: str, word2: str) -> Optional[str]:
+    """Message for a round that wasn't won; `similarity` is player-vs-computer."""
     egg_key = frozenset({word1.lower(), word2.lower()})
     if egg_key in EASTER_EGGS:
         return EASTER_EGGS[egg_key]
@@ -168,7 +221,7 @@ def get_funny_message(similarity: float, lang: str, word1: str, word2: str) -> O
         return random.choice(messages["far"])
     elif similarity < 0.45:
         return random.choice(messages["medium"])
-    return None
+    return random.choice(messages["close"])
 
 
 def get_win_message(lang: str, exact: bool = True,
@@ -199,8 +252,8 @@ def build_round_result(
     computer_sim = float(np.dot(computer_vec, midpoint))
     player_computer_sim = float(np.dot(player_vec, computer_vec))
     is_won = check_win(player_guess, computer_guess, player_vec, computer_vec, round_num)
-    is_exact = player_guess.lower() == computer_guess.lower()
-    funny_msg = None if is_won else get_funny_message(player_sim, lang, word1, word2)
+    is_exact = same_word(player_guess, computer_guess)
+    funny_msg = None if is_won else get_funny_message(player_computer_sim, lang, word1, word2)
     win_msg = (
         get_win_message(lang, exact=is_exact,
                         player_word=player_guess, computer_word=computer_guess)

@@ -58,7 +58,7 @@ describe("WinScreen", () => {
 
   it("pluralises the round count", () => {
     renderWin({ rounds: 1 });
-    expect(screen.getByText(/Converged in 1 round!/)).toBeInTheDocument();
+    expect(screen.getByText(/Met in the middle in 1 round!/)).toBeInTheDocument();
   });
 
   it("uses Hebrew copy for a Hebrew game", () => {

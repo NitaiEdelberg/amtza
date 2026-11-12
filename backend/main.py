@@ -24,6 +24,7 @@ from fastapi import FastAPI, HTTPException  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
+import associations  # noqa: E402
 from embeddings import (  # noqa: E402
     EmbeddingSpace,
     WordNotFoundError,
@@ -34,6 +35,7 @@ from embeddings import (  # noqa: E402
     get_word_vector,
     is_valid_word,
     load_or_download_sync,
+    lookup_index,
     normalize_word,
     phrase_vec,
     suggest_similar,
@@ -71,6 +73,8 @@ async def _load_models():
         # and nothing at all afterwards, since each language is then already cached.
         for lang in ("he", "en"):
             spaces[lang] = await loop.run_in_executor(None, load_or_download_sync, lang)
+            # Read the association map now rather than on the first guess.
+            await loop.run_in_executor(None, associations.load, lang)
             logger.info(f"{lang} model ready")
         models_loaded = True
         logger.info("Both embedding models loaded successfully")
@@ -167,8 +171,11 @@ def guess(req: GuessRequest):
             422,
             detail={
                 "error": "not_a_word",
-                "message": "הניחוש חייב להיות מילה" if lang == "he"
-                           else "Your guess needs to be a word",
+                # Reached by digits and symbols, but also by real words the
+                # vocabulary lacks ("halva"), so it must not tell the player
+                # their word isn't one.
+                "message": "את המילה הזאת אנחנו לא מכירים. נסו מילה אחרת?" if lang == "he"
+                           else "We don't know that word yet. Try another one?",
                 "word": req.player_guess,
                 "suggestions": [],
             },
@@ -247,6 +254,13 @@ def guess(req: GuessRequest):
         "similarity_to_word2": round(float(np.dot(computer_vec, pair_v2)), 3),
         "considered": int(len(space.good_indices)) if space.good_indices is not None else None,
     }
+    # Whether people associate the answer with each word, which can outweigh the
+    # vectors (see associations.py). Reported so the panel never claims a purely
+    # geometric choice when it wasn't one.
+    assoc = associations.load(lang)
+    if assoc is not None:
+        reason["people_link"] = [assoc.link(computer_guess, req.word1) > 0,
+                                 assoc.link(computer_guess, req.word2) > 0]
 
     result = build_round_result(
         round_num=req.round_num,
@@ -287,7 +301,7 @@ def validate(word: str):
     # `valid` is a permissive spell-check; a word can pass it and still have no
     # vector. Report that separately so the UI can warn *before* the player commits
     # to a guess, and offer alternatives it does know.
-    in_vocab = any(t in space.word_to_idx for t in canonical.split())
+    in_vocab = any(lookup_index(space, t) is not None for t in canonical.split())
     return {
         "valid": valid,
         "canonical": canonical,

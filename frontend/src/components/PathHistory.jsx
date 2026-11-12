@@ -17,7 +17,7 @@ export default function PathHistory({ history, language }) {
   return (
     <div className="path-history">
       <h3 className="path-history__title">
-        {isHe ? "מסלול ההתכנסות" : "Convergence path"}
+        {isHe ? "המסלול שלכם" : "Your path"}
       </h3>
       <div className="path-history__list">
         {history.map((round, i) => (
@@ -29,14 +29,15 @@ export default function PathHistory({ history, language }) {
             </div>
             <div className="path-history__guesses">
               <div className="path-history__guess path-history__guess--player">
-                <span className="path-history__guess-label">{isHe ? "אתה" : "You"}</span>
+                <span className="path-history__guess-label">{isHe ? "אתם" : "You"}</span>
                 <Word text={round.player_guess} />
-                <span className="path-history__pct">{Math.round(round.player_similarity * 100)}%</span>
+                
               </div>
               <div className="path-history__guess path-history__guess--computer">
-                <span className="path-history__guess-label">{isHe ? "מחשב" : "Computer"}</span>
+                <span className="path-history__guess-label">{isHe ? "המחשב" : "Computer"}</span>
                 <Word text={round.computer_guess} />
               </div>
+              <span className="path-history__pct">{Math.round((round.player_computer_similarity ?? 0) * 100)}%</span>
             </div>
             {i < history.length - 1 && <div className="path-history__connector">↓</div>}
           </div>

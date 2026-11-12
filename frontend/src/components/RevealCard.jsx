@@ -54,15 +54,15 @@ export default function RevealCard({ playerGuess, computerGuess, proximity, lang
   return (
     <div className="reveal-card">
       <div className="reveal-card__row">
-        <FlipCard label={isHe ? "אתה" : "You"} word={playerGuess} color="indigo" delay={0} flipped={flipped} />
-        <FlipCard label={isHe ? "מחשב" : "Computer"} word={computerGuess} color="teal" delay={150} flipped={flipped} />
+        <FlipCard label={isHe ? "אתם" : "You"} word={playerGuess} color="indigo" delay={0} flipped={flipped} />
+        <FlipCard label={isHe ? "המחשב" : "Computer"} word={computerGuess} color="teal" delay={150} flipped={flipped} />
       </div>
 
       {showProximity && (
         <div className="proximity-bar">
           <div className="proximity-bar__header">
             <span className="proximity-bar__label">
-              {isHe ? "קרבה בין הניחושים:" : "Guess proximity:"}
+              {isHe ? "כמה קרובות המילים:" : "How close your words were:"}
             </span>
             <span className="proximity-bar__score" style={{ color }}>{pct}%</span>
           </div>

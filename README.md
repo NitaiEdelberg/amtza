@@ -34,16 +34,40 @@ pinned: false
 
 The computer plays the semantic midpoint, restricted to a curated list of everyday
 words, so it won't throw junk tokens, proper nouns or grammatical fragments at you.
-The challenge is thinking like the algorithm. If you circle the same territory for a
-while, a gentle "homing" mechanism relaxes the match bar each round so every game
-converges.
+If you circle the same territory for a while, a gentle "homing" mechanism relaxes
+the match bar each round so every game converges.
+
+### How the computer picks its middle
+
+Two signals, because either one alone gets it wrong:
+
+1. **Word vectors** (fastText) find candidates related to both words, scored by the
+   weaker of the two similarities so the answer is balanced between them.
+2. **Everyday associations** (`backend/data/{lang}_associations.tsv`): for every word
+   the computer may say, its category and the words people think of first. A word
+   people link to *both* sides gets a bonus.
+
+The second exists because vectors measure which words appear together in text, not
+what a person reaches for. For apple + tree people say *fruit*; the vectors rank fig,
+olive and plum above it, because members of a category sit closer to each other than
+to its name. For holiday + candles every Israeli says *Hanukkah*; the vectors said
+*custom*. The associations were written per word, never per pair, so nothing in them
+was fitted to the test pairs below.
+
+The computer also never hands back a reshaped copy of a word already played
+(hero → heroine, musical → singer, wheels → wheel), and a plural or "the-" form of
+the same word counts as the same word (ילדים = ילד, הים = ים, apples = apple).
+
+`scripts/eval_human.py` measures how often the computer's word is one of the three
+answers a typical speaker would give, over 313 labelled pairs.
 
 ---
 
 ## The playable word list
 
 `backend/data/he_playable.txt` and `en_playable.txt` are the pool the computer may
-answer from — about 2,000 Hebrew and 2,300 English everyday nouns and adjectives.
+answer from — about 2,200 Hebrew and 2,500 English everyday nouns and adjectives,
+checked word by word for real, common, correctly spelled words.
 
 They exist because filtering could not do this job. Morphological rules are good at
 word *shape* and reliably reject בים, לעץ, נישואיה, running, biggest. They are
@@ -111,7 +135,7 @@ Open http://localhost:5173. The Vite proxy forwards API calls to `localhost:8000
 
 ### Tests
 
-114 backend tests, none of which need the models, and 35 frontend tests:
+130 backend tests, none of which need the models, and 35 frontend tests:
 
 ```bash
 cd backend && ./venv/bin/python -m unittest discover -s test -v
@@ -128,31 +152,48 @@ harness, which loads the real vectors:
 ./backend/venv/bin/python scripts/eval_quality.py --games-per-pair 4
 ```
 
-`eval_quality.py` is the one to use when changing the word lists or the scoring.
+Two harnesses judge the computer's choices, and a change to the scoring or the word
+lists should be run through both:
+
+```bash
+./backend/venv/bin/python scripts/eval_human.py            # does it say what people say?
+./backend/venv/bin/python scripts/eval_human.py --misses he
+./backend/venv/bin/python scripts/eval_quality.py --games-per-pair 3
+./backend/venv/bin/python scripts/build_associations.py    # after editing a word list
+```
+
+`eval_human.py` scores the computer's word against three human answers per pair.
+`eval_quality.py` is the one for convergence and variety.
 It reports three things, not just speed, because the two ways a pool can be wrong
 pull in opposite directions — too obscure reads as *weird*, too small reads as
 *repetitive*:
 
-| | he | en |
-|---|---|---|
-| converge within 30 rounds | 63% | 93% |
-| median rounds | 13 | 6 |
-| distinct answers | 16% | 28% |
-| answers barely related to either word | 0.0% | 0.0% |
+Measured on 2026-11-13, before and after adding the association map:
 
-**Hebrew converges far worse than English, and it is not the vocabulary.** The
-win bar is one number for both languages, and the two languages do not share a
-similarity scale. English near-synonyms land at 0.55–0.78 (`sea`/`ocean` 0.78,
-`car`/`vehicle` 0.73), so the 0.72 floor is reachable. Hebrew near-synonyms land
-at 0.25–0.66 (`ילד`/`נער` 0.66, `מלך`/`מלכה` 0.47, `בית`/`דירה` 0.25) — almost
-never 0.72 — so Hebrew wins depend on an exact match, and the computer's pool
-holds the player's exact word only ~12% of the time against English's ~29%.
+| | he before | he after | en before | en after |
+|---|---|---|---|---|
+| **computer says a human answer** (`eval_human.py`, starting pairs) | 40% | **51%** | 65% | **73%** |
+| same, mid-game pairs with a clear answer | 10% | **19%** | 28% | **44%** |
+| **play-tester agent** games won | 3/7 | **7/8** | 7/7 | **8/8** |
+| play-tester agent, average rounds | ~13 | **~6.7** | ~5.6 | **~3.3** |
+| simulated player, converge within 30 rounds | 71.7% | 63.2% | 91.0% | 88.6% |
+| simulated player, median rounds | 10 | 13 | 7 | 7 |
+| distinct answers | 23% | 23% | 36% | 36% |
 
-Simply lowering the Hebrew number does not work: Hebrew *antonyms* overlap the
-same band (`חם`/`קר` 0.68, `יום`/`לילה` 0.46), so any bar loose enough to accept
-real synonyms also declares the starting pair a win. A scale-free win condition —
-"the computer's word is among the nearest to yours" — would fix it properly.
-Measured, not guessed, and not yet implemented.
+The last block moved the wrong way for Hebrew, and that is expected rather than
+ignored: `eval_quality.py`'s stand-in player picks by cosine, exactly as the old
+computer did, so a computer that answers more like a person agrees with it less.
+The play-tester (an agent told to play as an ordinary Israeli and never shown the
+code) is the closer proxy for a real player, and it improved in both languages.
+All of these are model proxies for people; a few real games are still worth more.
+
+**Why Hebrew still trails English.** The Hebrew vectors come from Wikipedia, an
+encyclopedia, while English uses web text. Hebrew near-synonyms land at 0.25–0.66
+(`ילד`/`נער` 0.66, `בית`/`דירה` 0.25), so a near-synonym rarely clears the win bar,
+and lowering it does not work: at 0.72–0.80 Hebrew already pairs `אדום`/`כחול`,
+`לבן`/`שחור` and `כדורגל`/`כדורסל`, so any looser bar calls different things the
+same. The levers that do work are making the computer say what a person would
+(the association map) and counting a plural or "the-" form as the same word.
 
 ### Performance & startup notes
 

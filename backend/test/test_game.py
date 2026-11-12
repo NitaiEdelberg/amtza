@@ -97,9 +97,25 @@ class TestMessages(unittest.TestCase):
         self.assertIsNotNone(get_funny_message(0.25, "en", "x", "y"))  # far
         self.assertIsNotNone(get_funny_message(0.40, "en", "x", "y"))  # medium
 
-    def test_close_similarity_returns_no_message(self):
-        # Above the "medium" band the round isn't mocked as a win, but there's no nag.
-        self.assertIsNone(get_funny_message(0.6, "en", "x", "y"))
+    def test_near_miss_gets_the_close_message(self):
+        from game import FUNNY_MESSAGES_EN
+        self.assertIn(get_funny_message(0.6, "en", "x", "y"), FUNNY_MESSAGES_EN["close"])
+
+    def test_message_follows_guess_closeness_not_midpoint(self):
+        # A play-tester got "close!" at 11%: the tier came from the player's distance
+        # to the midpoint while the screen showed player-vs-computer closeness.
+        import numpy as np
+        from game import FUNNY_MESSAGES_EN
+        mid = np.array([1.0, 0.0], dtype=np.float32)
+        player = np.array([0.8, 0.6], dtype=np.float32)      # near the midpoint
+        computer = np.array([0.8, -0.6], dtype=np.float32)   # far from the player
+        r = build_round_result(1, "x", "y", "a", "b", player, computer, mid, "en")
+        self.assertIn(r.funny_message, FUNNY_MESSAGES_EN["very_far"] + FUNNY_MESSAGES_EN["far"])
+
+    def test_no_message_claims_the_computer_was_more_precise(self):
+        from game import FUNNY_MESSAGES_EN, FUNNY_MESSAGES_HE
+        every = [m for d in (FUNNY_MESSAGES_EN, FUNNY_MESSAGES_HE) for ms in d.values() for m in ms]
+        self.assertFalse([m for m in every if "precise" in m or "מדויק" in m])
 
     def test_win_message_language(self):
         self.assertIn(get_win_message("he"), __import__("game").WIN_MESSAGES_HE)
@@ -171,3 +187,23 @@ class TestBuildRoundResult(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSameWord(unittest.TestCase):
+    def test_regular_plurals_and_article_are_the_same_word(self):
+        from game import same_word
+        for a, b in [("ילדים", "ילד"), ("הים", "ים"), ("שולחנות", "שולחן"), ("מילות", "מילה"),
+                     ("apples", "apple"), ("cherries", "cherry"), ("boxes", "box")]:
+            with self.subTest(a=a, b=b):
+                self.assertTrue(same_word(a, b))
+                self.assertTrue(same_word(b, a))
+
+    def test_lookalikes_are_not(self):
+        from game import same_word
+        for a, b in [("ים", "מים"), ("cat", "car"), ("hat", "hate"), ("אור", "הר")]:
+            with self.subTest(a=a, b=b):
+                self.assertFalse(same_word(a, b))
+
+    def test_plural_wins_even_with_far_vectors(self):
+        far = np.array([1.0, 0.0], dtype=np.float32), np.array([0.0, 1.0], dtype=np.float32)
+        self.assertTrue(check_win("ילדים", "ילד", *far, round_num=1))

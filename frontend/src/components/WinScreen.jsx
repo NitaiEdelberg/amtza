@@ -37,7 +37,7 @@ export default function WinScreen({ winMessage, rounds, playerWord, computerWord
           </p>
         )}
         <p className="win-screen__stat">
-          {isHe ? `הגענו באמצע בסיבוב ${rounds}!` : `Converged in ${rounds} round${rounds === 1 ? "" : "s"}!`}
+          {isHe ? `נפגשנו באמצע בסיבוב ${rounds}!` : `Met in the middle in ${rounds} round${rounds === 1 ? "" : "s"}!`}
         </p>
         <PathHistory history={history} language={language} />
         <button className="btn btn--primary btn--large" onClick={onNewGame}>

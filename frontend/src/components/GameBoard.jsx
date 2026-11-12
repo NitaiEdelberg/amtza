@@ -3,7 +3,6 @@ import AdSlot from "./AdSlot";
 import WordPair from "./WordPair";
 import GuessInput from "./GuessInput";
 import RevealCard from "./RevealCard";
-import SimilarityMeter from "./SimilarityMeter";
 import PathHistory from "./PathHistory";
 
 export default function GameBoard({
@@ -95,11 +94,6 @@ export default function GameBoard({
             word1={currentPair.word1}
             word2={currentPair.word2}
             reason={lastRound.computer_reason}
-          />
-          <SimilarityMeter
-            similarity={lastRound.player_similarity}
-            lang={lastRound.language}
-            visible={true}
           />
           {lastRound.funny_message && (
             <p className="funny-message">{lastRound.funny_message}</p>

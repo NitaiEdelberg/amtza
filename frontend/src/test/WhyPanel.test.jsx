@@ -21,6 +21,22 @@ describe("WhyPanel", () => {
     expect(panel).toHaveTextContent("1,969");
   });
 
+  it("credits people's associations only when the backend reports both", async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(
+      <WhyPanel word1="apple" word2="tree" computerGuess="fruit"
+        reason={{ ...reason, people_link: [true, true] }} lang="en" />
+    );
+    await user.click(screen.getByRole("button", { name: /Why that word/ }));
+    expect(screen.getByRole("region")).toHaveTextContent(/people tend to connect/);
+    unmount();
+
+    render(<WhyPanel word1="apple" word2="tree" computerGuess="fig"
+      reason={{ ...reason, people_link: [true, false] }} lang="en" />);
+    await user.click(screen.getByRole("button", { name: /Why that word/ }));
+    expect(screen.getByRole("region")).not.toHaveTextContent(/people tend to connect/);
+  });
+
   it("renders nothing when the backend sent no reason", () => {
     // Older backends, and any response where the field is absent.
     const { container } = render(

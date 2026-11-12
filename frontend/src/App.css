@@ -438,43 +438,6 @@ body {
   font-weight: 700;
 }
 
-/* ── Similarity Meter ───────────────────────────────────────────────────────── */
-.similarity-meter {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1rem 1.25rem;
-}
-
-.similarity-meter__header {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  margin-bottom: 0.6rem;
-  font-size: 0.9rem;
-  color: var(--text2);
-  flex-wrap: wrap;
-}
-
-.similarity-meter__score {
-  font-size: 1.2rem;
-  font-weight: 700;
-  color: var(--text);
-}
-
-.similarity-meter__track {
-  height: 10px;
-  background: var(--bg3);
-  border-radius: 5px;
-  overflow: hidden;
-}
-
-.similarity-meter__fill {
-  height: 100%;
-  border-radius: 5px;
-  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
 /* ── Funny Message ──────────────────────────────────────────────────────────── */
 .funny-message {
   text-align: center;
@@ -622,7 +585,6 @@ body {
   .flip-card { width: 135px; height: 105px; }
   .flip-card__word { font-size: 1.1rem; }
   .flip-card__label { font-size: 0.7rem; }
-  .similarity-meter { padding: 0.75rem 1rem; }
   .proximity-bar { padding: 0.65rem 1rem; }
   .idle-screen__card h2 { font-size: 1.3rem; }
   .idle-screen__rules { font-size: 0.9rem; }

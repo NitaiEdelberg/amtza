@@ -8,6 +8,8 @@ from pathlib import Path
 
 import numpy as np
 
+import associations
+
 logger = logging.getLogger(__name__)
 
 CACHE_DIR = Path(os.getenv("MODEL_CACHE_DIR", str(Path.home() / ".amtza" / "models")))
@@ -1012,9 +1014,46 @@ def _edit_distance_within_1(a: str, b: str) -> bool:
     return True
 
 
+# Loanwords written with a geresh (ז'אנר, ג'ירפה) are not in the Hebrew vocabulary
+# under their own spelling: the Wikipedia tokenizer split them at the apostrophe,
+# so the meaning landed on whatever followed it ("אנר" sits next to סוגה, "ירפה"
+# next to זברה). A player typing the real word was told it isn't in the dictionary.
+#
+# This is a list, not a rule, on purpose. Every entry was checked by its fragment's
+# nearest neighbours, and the rule would have been wrong as often as right:
+# ג'חנון -> "חנון" means "nerd", ג'ירו -> "ירו" is "they shot", ג'קוזי lands on
+# a basketball player. Those are deliberately absent. The fragment is only ever used
+# as the *vector* for what the player typed; the computer answers from the curated
+# playable list, so it can never say "אנר".
+_HE_GERESH_ALIASES = {
+    "ז'אנר": "אנר",
+    "ג'ירפה": "ירפה",
+    "ג'ירף": "ירף",
+    "ג'ירפות": "ירפות",
+    "ג'ונגל": "ונגל",
+    "צ'יפס": "יפס",
+    "ג'ינס": "ינס",
+    "ג'ודו": "ודו",
+    "ג'וקר": "וקר",
+    "צ'ילי": "ילי",
+    "ג'נטלמן": "נטלמן",
+}
+
+
+def lookup_index(space: EmbeddingSpace, token: str) -> "int | None":
+    """Vocabulary row for an already-normalised token, honouring the geresh aliases."""
+    idx = space.word_to_idx.get(token)
+    if idx is None and space.language == "he":
+        # Phones type the geresh as ' or ’ as often as ׳; the table uses '.
+        alias = _HE_GERESH_ALIASES.get(token.replace("׳", "'").replace("’", "'"))
+        if alias is not None:
+            idx = space.word_to_idx.get(alias)
+    return idx
+
+
 def get_word_vector(space: EmbeddingSpace, word: str) -> "np.ndarray | None":
     canonical = normalize_word(word, space.language)
-    idx = space.word_to_idx.get(canonical)
+    idx = lookup_index(space, canonical)
     if idx is None:
         return None
     return _row(space, idx)
@@ -1026,7 +1065,7 @@ def phrase_vec(space: EmbeddingSpace, phrase: str) -> np.ndarray:
     vecs = []
     for t in tokens:
         canonical = normalize_word(t, space.language)
-        idx = space.word_to_idx.get(canonical)
+        idx = lookup_index(space, canonical)
         if idx is not None:
             vecs.append(_row(space, idx))
     if not vecs:
@@ -1327,9 +1366,64 @@ def _nearest_indices(space: EmbeddingSpace, vec: np.ndarray, n: int) -> np.ndarr
 _IMBALANCE_TOL = 0.12
 
 
+_HE_FROM_FINAL = {v: k for k, v in _HE_TO_FINAL.items()}
+
+
+def _stem_key(word: str, lang: str) -> str:
+    """Spelling-neutral form for comparing word shapes: final letters made regular."""
+    if lang == "he" and word and word[-1] in _HE_FROM_FINAL:
+        return word[:-1] + _HE_FROM_FINAL[word[-1]]
+    return word
+
+
+def _is_derived_form(word: str, played: set, lang: str) -> bool:
+    """Whether `word` is just a reshaped copy of something already on the board.
+
+    Excluding the played words themselves was never enough. A play-tester caught the
+    computer handing back גיבורה after גיבור, שחקנית after שחקן, זמר cut out of
+    מחזמר, wheel after wheels and writer after write. Every one is technically a
+    different word and every one reads as the game cheating, because nothing new was
+    thought of.
+
+    Hebrew is checked as containment (it inflects with prefixes and suffixes, so the
+    shorter form sits inside the longer one once final letters are normalised).
+    English only as a shared prefix of 4+ letters, since a substring test there would
+    ban "party" for "art". Short words (under 3 letters) are left alone; ים in מים
+    is a coincidence, not a derivation.
+    """
+    w = _stem_key(word, lang)
+    for p in played:
+        if " " in p:
+            continue
+        q = _stem_key(p, lang)
+        short, long_ = (w, q) if len(w) <= len(q) else (q, w)
+        if lang == "he":
+            if len(short) >= 3 and short in long_ and len(long_) - len(short) <= 3:
+                return True
+        elif len(short) >= 4 and long_.startswith(short):
+            return True
+    return False
+
+
 def _too_close_to_one_end(s1: float, s2: float, ceiling: float) -> bool:
     """Whether a candidate is bound to one endpoint rather than between the two."""
     return max(s1, s2) > ceiling and abs(s1 - s2) > _IMBALANCE_TOL
+
+
+# How much an everyday association is worth next to cosine similarity (see
+# associations.py). Tuned on scripts/eval_human.py (computer's word among a typical
+# speaker's top three answers), measured before -> after adding associations:
+#   he starting pairs 40% -> 51%, he mid-game (clear labels) 10% -> 19%
+#   en starting pairs 65% -> 73%, en mid-game (clear labels) 28% -> 44%
+# Stronger association weights gained Hebrew 2-4 points (1-3 pairs, i.e. noise)
+# while costing English 4-8, so one setting serves both. TRIED AND REJECTED: an
+# extra bonus when the candidate is the shared *category* ("animal" over "tail"
+# for dog+cat). English fell 73% -> 68% and Hebrew didn't move: people often
+# prefer a specific shared word ("pet") to the broad category.
+ASSOC_FLOOR = 0.10        # minimum cosine to each side for an associated word
+ASSOC_BOTH_BONUS = 0.10   # linked to both words on the board
+ASSOC_STRENGTH = 0.10     # scaled by how strong those links are
+ASSOC_ONE_SIDE = 0.03     # linked to one side only
 
 
 def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set) -> str:
@@ -1361,6 +1455,21 @@ def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set
     # these numbers always described far fewer real options than they appear to.
     n_candidates = base_n + len(exclude)
     indices = _nearest_good_indices(space, midpoint, n_candidates)
+
+    # Words people associate with either side join the candidates even when the
+    # vectors put them outside the nearest-N: "fruit" for apple+tree is the classic
+    # case, ranked below every individual fruit by cosine alone.
+    assoc = associations.load(space.language)
+    if assoc is not None:
+        have = set(int(i) for i in indices)
+        extra = []
+        for w in assoc.linked_to(word1) | assoc.linked_to(word2):
+            idx = space.word_to_idx.get(w)
+            if idx is not None and idx not in have and _is_good_idx(space, idx):
+                extra.append(idx)
+                have.add(idx)
+        if extra:
+            indices = np.concatenate([indices, np.asarray(extra, dtype=indices.dtype)])
 
     # When the pair is already very similar (converging), relax ceiling; otherwise tighten
     # to prevent words glued to one cluster.
@@ -1394,6 +1503,8 @@ def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set
             word = space.words[idx]
             if word in exclude or not _is_good_idx(space, idx):
                 continue
+            if _is_derived_form(word, exclude, space.language):
+                continue
             s1 = float(sims1[pos])
             s2 = float(sims2[pos])
             if accept(s1, s2):
@@ -1407,11 +1518,24 @@ def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set
             continue
         s1 = float(sims1[pos])
         s2 = float(sims2[pos])
-        if s1 < MIN_FLOOR or s2 < MIN_FLOOR:
+        l1 = assoc.link(word, word1) if assoc is not None else 0.0
+        l2 = assoc.link(word, word2) if assoc is not None else 0.0
+        if _is_derived_form(word, exclude, space.language):
             continue
-        if _too_close_to_one_end(s1, s2, sim_ceiling):
-            continue
-        score = min(s1, s2)
+        if l1 > 0 and l2 > 0:
+            # People connect it to both words. The vectors still have to agree it
+            # is at least loosely related to each (ASSOC_FLOOR), but the balance
+            # and ceiling rules are for guessing a middle from geometry alone, and
+            # this one isn't a guess.
+            if s1 < ASSOC_FLOOR or s2 < ASSOC_FLOOR:
+                continue
+            score = min(s1, s2) + ASSOC_BOTH_BONUS + ASSOC_STRENGTH * (l1 + l2) / 2
+        else:
+            if s1 < MIN_FLOOR or s2 < MIN_FLOOR:
+                continue
+            if _too_close_to_one_end(s1, s2, sim_ceiling):
+                continue
+            score = min(s1, s2) + ASSOC_ONE_SIDE * max(l1, l2)
         if score > best_score:
             best_score = score
             best_word = word
@@ -1458,6 +1582,23 @@ def get_hints(space: EmbeddingSpace, word1: str, word2: str, n_hints: int = 3) -
     indices = _nearest_good_indices(space, midpoint, n_pool)
     hints = []
     seen_normalized = set()
+
+    # First, up to two words people connect to BOTH sides. A play-tester found the
+    # midpoint-only hints unhelpful for the same reason the computer's answers were
+    # off: the vectors offer siblings, while a useful nudge is the shared idea.
+    assoc = associations.load(space.language)
+    if assoc is not None:
+        both = []
+        for w in assoc.linked_to(word1) & assoc.linked_to(word2):
+            idx = space.word_to_idx.get(w)
+            if (idx is None or w in exclude or not _is_good_idx(space, idx)
+                    or _is_derived_form(w, exclude, space.language)):
+                continue
+            both.append((assoc.link(w, word1) + assoc.link(w, word2), w))
+        for _, w in sorted(both, reverse=True)[:2]:
+            hints.append(w)
+            seen_normalized.add(w)
+
     rank = 0
     for idx in indices:
         word = space.words[idx]
