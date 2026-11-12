@@ -1,0 +1,89 @@
+# Does the computer still say what a person would say?
+#
+# Unit tests can't answer that: the quality of the computer's middle word only
+# shows up against the real word vectors and real labelled pairs. This workflow
+# loads the same prebuilt model cache production boots from (the models-v1
+# GitHub Release, ~180MB, cached between runs) and runs three checks:
+#
+#   1. The association map is in sync with its drafts and the word lists.
+#      build_associations.py is deterministic, so a rebuild that changes
+#      backend/data means someone edited a list and forgot to rebuild.
+#   2. scripts/eval_human.py --check: fails if any split matches the human
+#      answers on more than 2 fewer pairs than scripts/data/eval_baseline.json.
+#      After an intended improvement, refresh it with --write-baseline.
+#   3. scripts/eval_quality.py: convergence and variety against a simulated
+#      player. Reported, not gated: that player picks by cosine, as the old
+#      computer did, so it disagrees with a more human computer by design
+#      (see README, "Measured on 2026-11-13").
+name: eval
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - "scripts/**"
+      - ".github/workflows/eval.yml"
+  push:
+    branches: [master]
+    paths:
+      - "backend/**"
+      - "scripts/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eval-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MODEL_CACHE_DIR: ${{ github.workspace }}/.models
+  PREBUILT_CACHE_URL: https://github.com/NitaiEdelberg/amtza/releases/download/models-v1
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r backend/requirements.txt
+
+      # Keyed on the cache format version embeddings.py reads ({lang}_v4.npy).
+      - uses: actions/cache@v4
+        with:
+          path: .models
+          key: amtza-models-v4
+
+      - name: Load models (fetches the prebuilt cache on a cold run)
+        run: |
+          python - <<'EOF'
+          import sys; sys.path.insert(0, "backend")
+          from embeddings import load_or_download_sync
+          for lang in ("he", "en"):
+              s = load_or_download_sync(lang)
+              print(lang, len(s.words), "words")
+          EOF
+
+      - name: Association map is in sync with its drafts
+        run: |
+          python scripts/build_associations.py
+          git diff --exit-code --stat backend/data \
+            || { echo "::error::backend/data/*_associations.tsv is stale. Run scripts/build_associations.py and commit the result."; exit 1; }
+
+      - name: Human-match regression gate
+        run: python scripts/eval_human.py --check
+
+      - name: Convergence and variety (informational)
+        run: |
+          {
+            echo '### Convergence and variety (simulated player, informational)'
+            echo '```'
+            python scripts/eval_quality.py --games-per-pair 1 2>/dev/null | grep -v "pairs, "
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

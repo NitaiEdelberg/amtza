@@ -163,6 +163,14 @@ lists should be run through both:
 ```
 
 `eval_human.py` scores the computer's word against three human answers per pair.
+
+**CI** (`.github/workflows/`): `ci.yml` runs the unit tests, lint and build on every
+push and PR. `eval.yml` runs whenever `backend/` or `scripts/` change: it loads the
+real models from the `models-v1` Release, fails if the association map is stale,
+fails if any split of `eval_human.py` matches people on more than 2 fewer pairs than
+`scripts/data/eval_baseline.json`, and posts the convergence numbers to the run
+summary. After an intended improvement, refresh the baseline with
+`scripts/eval_human.py --write-baseline` and commit it with the change.
 `eval_quality.py` is the one for convergence and variety.
 It reports three things, not just speed, because the two ways a pool can be wrong
 pull in opposite directions — too obscure reads as *weird*, too small reads as
