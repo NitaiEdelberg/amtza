@@ -168,11 +168,16 @@ def _surface_forms(word: str) -> set:
         if w.startswith("ה") and len(w) >= 3:
             forms.add(w[1:])
         for base in list(forms):
-            stem = base[:-1] + _HE_FINAL_TO_REGULAR.get(base[-1], base[-1]) if base else base
-            forms.update({stem + "ים", stem + "ות"})
+            # ־ים on any 3+ letter base (ילד -> ילדים), but ־ות only after ה/ת
+            # (מילה -> מילות). A bare stem+ות joins different words: שיר/שירות is
+            # song/service, ספר/ספרות book/literature. Short bases are left out
+            # for the same reason: חי + ים is חיים, "life".
+            if len(base) >= 3:
+                stem = base[:-1] + _HE_FINAL_TO_REGULAR.get(base[-1], base[-1])
+                forms.add(stem + "ים")
             if base.endswith(("ה", "ת")) and len(base) >= 3:
                 forms.add(base[:-1] + "ות")
-            if base.endswith(("ים", "ות")) and len(base) >= 4:
+            if base.endswith("ים") and len(base) >= 5:
                 forms.add(base[:-2])
     else:
         forms.update({w + "s", w + "es"})

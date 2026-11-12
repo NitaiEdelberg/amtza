@@ -192,7 +192,7 @@ if __name__ == "__main__":
 class TestSameWord(unittest.TestCase):
     def test_regular_plurals_and_article_are_the_same_word(self):
         from game import same_word
-        for a, b in [("ילדים", "ילד"), ("הים", "ים"), ("שולחנות", "שולחן"), ("מילות", "מילה"),
+        for a, b in [("ילדים", "ילד"), ("הים", "ים"), ("ספרים", "ספר"), ("מילות", "מילה"),
                      ("apples", "apple"), ("cherries", "cherry"), ("boxes", "box")]:
             with self.subTest(a=a, b=b):
                 self.assertTrue(same_word(a, b))
@@ -200,7 +200,9 @@ class TestSameWord(unittest.TestCase):
 
     def test_lookalikes_are_not(self):
         from game import same_word
-        for a, b in [("ים", "מים"), ("cat", "car"), ("hat", "hate"), ("אור", "הר")]:
+        # שיר/שירות and ספר/ספרות look like a plural and are different words.
+        for a, b in [("ים", "מים"), ("cat", "car"), ("hat", "hate"), ("אור", "הר"),
+                     ("שיר", "שירות"), ("ספר", "ספרות"), ("חי", "חיים")]:
             with self.subTest(a=a, b=b):
                 self.assertFalse(same_word(a, b))
 

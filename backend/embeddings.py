@@ -1419,7 +1419,10 @@ def _too_close_to_one_end(s1: float, s2: float, ceiling: float) -> bool:
 # while costing English 4-8, so one setting serves both. TRIED AND REJECTED: an
 # extra bonus when the candidate is the shared *category* ("animal" over "tail"
 # for dog+cat). English fell 73% -> 68% and Hebrew didn't move: people often
-# prefer a specific shared word ("pet") to the broad category.
+# prefer a specific shared word ("pet") to the broad category. ALSO REJECTED: a
+# penalty for siblings (a candidate sharing a category with a word on the board,
+# pear for apple+tree). English fell 73% -> 70% at 0.05 and 54% at 0.25: "food"
+# and "animal" are broad enough that good answers count as siblings too.
 ASSOC_FLOOR = 0.10        # minimum cosine to each side for an associated word
 ASSOC_BOTH_BONUS = 0.10   # linked to both words on the board
 ASSOC_STRENGTH = 0.10     # scaled by how strong those links are
