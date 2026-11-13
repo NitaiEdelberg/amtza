@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { checkHealth, getRandomPair, submitGuess, getHint, waitForLanguage } from "./api";
+import { checkHealth, getRandomPair, submitGuess, getHint, waitForLanguage, friendlyError, newGameId } from "./api";
 import GameBoard from "./components/GameBoard";
 import HowItWorks from "./components/HowItWorks";
 import SiteFooter from "./components/SiteFooter";
@@ -27,6 +27,7 @@ export default function App() {
   const [usedWords, setUsedWords] = useState([]);
   const [guessError, setGuessError] = useState(null);
   const [startError, setStartError] = useState(null);
+  const [gameId, setGameId] = useState(null);
   const [waking, setWaking] = useState(null); // {seconds, unreachable} while waiting on the server
   // A ref, not state: nothing renders from it — it only decides whether pressing
   // Play can go straight through — so re-rendering the app on each poll is waste.
@@ -84,6 +85,7 @@ export default function App() {
     try {
       const pair = await getRandomPair(lang);
       setCurrentPair(pair);
+      setGameId(newGameId());
       setHistory([]);
       setRoundNum(1);
       setLastRound(null);
@@ -113,14 +115,18 @@ export default function App() {
         currentPair.word2,
         playerGuess,
         roundNum,
-        usedWords
+        usedWords,
+        gameId
       );
       setLastRound(result);
       setGamePhase("revealing");
     } catch (err) {
       // Shown inline next to the input (with any alternative spellings the
       // backend knows) rather than in a browser alert() the player must dismiss.
-      setGuessError({ message: err.message, suggestions: err.suggestions || [] });
+      setGuessError({
+        message: friendlyError(err, currentPair.language === "he"),
+        suggestions: err.suggestions || [],
+      });
     } finally {
       setIsLoading(false);
     }
@@ -240,6 +246,12 @@ export default function App() {
               {startError && (
                 <p className="idle-screen__error" role="alert">{startError}</p>
               )}
+              {/* Says exactly what backend/gamelog.py stores, no more and no less. */}
+              <p className="idle-screen__privacy">
+                {selectedLang === "he"
+                  ? "אנחנו שומרים את המילים מהמשחקים, בלי שום פרט מזהה, כדי ללמד את המחשב לחשוב כמו אנשים."
+                  : "We keep the words from games, with nothing that identifies you, to teach the computer to think like people."}
+              </p>
             </div>
           </div>
         )}

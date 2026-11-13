@@ -2,6 +2,7 @@ import Confetti from "react-confetti";
 import { useEffect, useState } from "react";
 import AdSlot from "./AdSlot";
 import PathHistory from "./PathHistory";
+import ShareButton from "./ShareButton";
 
 export default function WinScreen({ winMessage, rounds, playerWord, computerWord, history, onNewGame, language }) {
   const [size, setSize] = useState({ width: window.innerWidth, height: window.innerHeight });
@@ -39,6 +40,7 @@ export default function WinScreen({ winMessage, rounds, playerWord, computerWord
         <p className="win-screen__stat">
           {isHe ? `נפגשנו באמצע בסיבוב ${rounds}!` : `Met in the middle in ${rounds} round${rounds === 1 ? "" : "s"}!`}
         </p>
+        <ShareButton history={history} language={language} />
         <PathHistory history={history} language={language} />
         <button className="btn btn--primary btn--large" onClick={onNewGame}>
           {isHe ? "משחק חדש 🎮" : "New Game 🎮"}

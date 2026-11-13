@@ -73,3 +73,19 @@ describe("WinScreen", () => {
     expect(onNewGame).toHaveBeenCalled();
   });
 });
+
+describe("share text", () => {
+  it("shows the starting pair and one square per round, not the answer", async () => {
+    const { shareText } = await import("../share");
+    const history = [
+      { word1: "עץ", word2: "תפוח", player_guess: "ירוק", computer_guess: "אגס", player_computer_similarity: 0.2, is_won: false },
+      { word1: "ירוק", word2: "אגס", player_guess: "פרי", computer_guess: "פרי", player_computer_similarity: 1, is_won: true },
+    ];
+    const text = shareText(history, "he", "https://amtza.netlify.app");
+    expect(text).toContain("עץ + תפוח");
+    expect(text).toContain("🟥🟩");
+    expect(text).toContain("בסיבוב 2");
+    expect(text).toContain("https://amtza.netlify.app");
+    expect(text).not.toContain("פרי");
+  });
+});

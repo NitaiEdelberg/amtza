@@ -93,6 +93,10 @@ describe("App boot states", () => {
     const user = userEvent.setup();
     const play = await screen.findByRole("button", { name: /בואו נשחק/ });
     await user.click(play);
-    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/לא הצלחנו להתחיל משחק/));
+    // A 5xx is retried once (after 1.5s) before the player is told, so allow for it.
+    await waitFor(
+      () => expect(screen.getByRole("alert")).toHaveTextContent(/לא הצלחנו להתחיל משחק/),
+      { timeout: 4000 },
+    );
   });
 });

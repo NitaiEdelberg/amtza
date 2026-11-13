@@ -135,7 +135,7 @@ Open http://localhost:5173. The Vite proxy forwards API calls to `localhost:8000
 
 ### Tests
 
-130 backend tests, none of which need the models, and 35 frontend tests:
+143 backend tests, none of which need the models, and 43 frontend tests:
 
 ```bash
 cd backend && ./venv/bin/python -m unittest discover -s test -v
@@ -323,6 +323,50 @@ trigger a redeploy for it to take effect.
 > gives you the site URL, then redeploy the frontend.
 
 ---
+
+## Launch checklist (sharing it publicly)
+
+Measured on the live free instance (0.1 CPU, Oregon) on 2026-11-13: no errors with
+40 simultaneous simulated players, but the server tops out around 12 guesses a
+second, so past ~25 people actively playing at once every guess waits 2-6s.
+About 0.4s of every request is the trip to Oregon. The free tier is enough for a
+LinkedIn post; these steps make the first impression good:
+
+1. **Check the preview.** Paste the link into LinkedIn's
+   [Post Inspector](https://www.linkedin.com/post-inspector/). LinkedIn caches
+   previews, so do this *before* posting, and again after any change to
+   `og-image.png` or the meta tags.
+2. **Play a full game on your phone**, in both languages. Most clicks come from the
+   LinkedIn app's in-app browser.
+3. **Turn on launch mode** right before posting: Actions → `launch-mode` → Run
+   workflow (up to 6h; run again to extend). A sleeping free instance makes the
+   first visitor wait about a minute. It spends the shared 750h Render budget, so
+   don't leave it on.
+4. **Watch it.** Render's logs show `gamelog:` lines and any errors; the
+   Supabase `rounds` table fills as people play.
+
+What protects the shared server: per-IP limits (`backend/ratelimit.py`: bursts of
+20 guesses, then 60/min, generous on purpose because offices share one IP), a
+15s timeout with one automatic retry in the client, and plain "the server is busy"
+messages instead of a spinner that never ends. If it outgrows the free tier,
+Render's Starter plan ($7/mo) removes the sleep and gives ~5x the CPU.
+
+### Game data (Supabase)
+
+Optional and off by default. When on, every round is stored anonymously (a random
+per-game id, the language, the words on screen, both guesses, their similarity,
+and whether it was won: no IP, no user agent, no account), so real games can check
+what the model-based evals only approximate. Setup:
+
+1. In Supabase, run `supabase/schema.sql` in the SQL editor. It enables row-level
+   security with no policies, so the public key can't read or write the table.
+2. In Render → amtza-api → Environment, set `SUPABASE_URL`
+   (`https://<project>.supabase.co`) and `SUPABASE_KEY` (the **secret** key).
+   Never put the secret key in Netlify; the frontend doesn't need it.
+3. Redeploy. The log shows `gamelog: on`.
+
+The welcome screen tells players what is kept. If the stored fields ever change,
+change that sentence too.
 
 ## Search and ads
 

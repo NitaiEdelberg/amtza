@@ -1463,10 +1463,12 @@ def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set
     # vectors put them outside the nearest-N: "fruit" for apple+tree is the classic
     # case, ranked below every individual fruit by cosine alone.
     assoc = associations.load(space.language)
+    links1 = assoc.links_of(word1) if assoc is not None else {}
+    links2 = assoc.links_of(word2) if assoc is not None else {}
     if assoc is not None:
         have = set(int(i) for i in indices)
         extra = []
-        for w in assoc.linked_to(word1) | assoc.linked_to(word2):
+        for w in links1.keys() | links2.keys():
             idx = space.word_to_idx.get(w)
             if idx is not None and idx not in have and _is_good_idx(space, idx):
                 extra.append(idx)
@@ -1521,10 +1523,8 @@ def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set
             continue
         s1 = float(sims1[pos])
         s2 = float(sims2[pos])
-        l1 = assoc.link(word, word1) if assoc is not None else 0.0
-        l2 = assoc.link(word, word2) if assoc is not None else 0.0
-        if _is_derived_form(word, exclude, space.language):
-            continue
+        l1 = links1.get(word, 0.0)
+        l2 = links2.get(word, 0.0)
         if l1 > 0 and l2 > 0:
             # People connect it to both words. The vectors still have to agree it
             # is at least loosely related to each (ASSOC_FLOOR), but the balance
@@ -1539,7 +1539,9 @@ def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set
             if _too_close_to_one_end(s1, s2, sim_ceiling):
                 continue
             score = min(s1, s2) + ASSOC_ONE_SIDE * max(l1, l2)
-        if score > best_score:
+        # Checked last, and only for a would-be winner: it is the costliest test
+        # and almost every candidate has already lost on score.
+        if score > best_score and not _is_derived_form(word, exclude, space.language):
             best_score = score
             best_word = word
 
