@@ -38,3 +38,11 @@ services:
         sync: false
       - key: PREBUILT_CACHE_URL
         sync: false
+      # Optional anonymous game log (backend/gamelog.py, table in
+      # supabase/schema.sql). Both unset = logging off.
+      #   SUPABASE_URL  — https://<project>.supabase.co
+      #   SUPABASE_KEY  — the project's SECRET key (server-side only, never in Netlify)
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false

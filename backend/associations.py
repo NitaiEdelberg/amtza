@@ -80,25 +80,29 @@ class Associations:
     def __len__(self):
         return len(self.forward)
 
-    def link(self, candidate: str, word: str) -> float:
-        """0..1 strength of the everyday connection between the two."""
-        best = 0.0
+    def links_of(self, word: str) -> dict:
+        """{candidate: strength} for everything linked to `word`, either direction.
+
+        Built once per board word, so scoring ~800 candidates is a dict lookup each
+        rather than a re-derivation of the word's forms per candidate, which doubled
+        a guess's CPU on the free 0.1-CPU instance.
+        """
+        out = {}
         for token in word.split():
             for key in _lookup_keys(token, self.lang):
-                best = max(best,
-                           self.forward.get(candidate, {}).get(key, 0.0),
-                           self.reverse.get(candidate, {}).get(key, 0.0),
-                           self.forward.get(key, {}).get(candidate, 0.0))
-        return best
+                for table in (self.forward.get(key, {}), self.reverse.get(key, {})):
+                    for other, wt in table.items():
+                        if wt > out.get(other, 0.0):
+                            out[other] = wt
+        return out
+
+    def link(self, candidate: str, word: str) -> float:
+        """0..1 strength of the everyday connection between the two."""
+        return self.links_of(word).get(candidate, 0.0)
 
     def linked_to(self, word: str) -> set:
         """Every word with any link to `word`, for widening the candidate set."""
-        out = set()
-        for token in word.split():
-            for key in _lookup_keys(token, self.lang):
-                out.update(self.forward.get(key, {}))
-                out.update(self.reverse.get(key, {}))
-        return out
+        return set(self.links_of(word))
 
 
 _cache: dict = {}

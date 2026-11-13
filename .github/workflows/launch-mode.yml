@@ -1,0 +1,47 @@
+# Keep the API awake for the hours after you share the game somewhere.
+#
+# keep-alive.yml covers the everyday window (09:00-19:00 Israel time) inside the
+# account-wide 750 free instance-hours (see the budget note there). A post on
+# LinkedIn sends its crowd whenever people scroll, often outside that window, and
+# a sleeping free instance makes the first visitor wait about a minute while it
+# boots and loads its word vectors. That first visitor is exactly the person who
+# decides whether the post was worth clicking.
+#
+# Run it by hand: Actions -> launch-mode -> Run workflow, right before posting.
+# It pings every 5 minutes for the hours you choose, capped at 6 (GitHub's limit
+# for one job). Run it again to extend.
+#
+# Budget: every hour this runs is an hour of the shared 750. A launch day's 6h is
+# about 1% of the month; it is the habit of leaving it on that would hurt.
+name: launch-mode
+
+on:
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: "Hours to keep the API awake (1-6)"
+        required: true
+        default: "6"
+
+permissions: {}
+
+jobs:
+  awake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 370
+    steps:
+      - name: Keep the API awake
+        env:
+          API_URL: ${{ vars.API_URL || 'https://amtza-api.onrender.com' }}
+          HOURS: ${{ inputs.hours }}
+        run: |
+          hours=$(( HOURS < 1 ? 1 : (HOURS > 6 ? 6 : HOURS) ))
+          end=$(( $(date +%s) + hours * 3600 ))
+          echo "Keeping ${API_URL} awake for ${hours}h"
+          while [ "$(date +%s)" -lt "$end" ]; do
+            # A failed ping is logged, not fatal: one missed ping costs one
+            # visitor a wake-up, while a crashed job costs the rest of the window.
+            curl --silent --show-error --max-time 180 "${API_URL%/}/health" || echo "ping failed"
+            echo
+            sleep 300
+          done

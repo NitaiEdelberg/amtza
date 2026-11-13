@@ -14,17 +14,20 @@ for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
     os.environ.setdefault(_v, "1")
 
 import asyncio  # noqa: E402
+import uuid  # noqa: E402
 import logging  # noqa: E402
 from contextlib import asynccontextmanager  # noqa: E402
 from typing import Dict, List, Optional  # noqa: E402
 
 import numpy as np  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
-from fastapi import FastAPI, HTTPException  # noqa: E402
+from fastapi import FastAPI, HTTPException, Request  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
 import associations  # noqa: E402
+import gamelog  # noqa: E402
 from embeddings import (  # noqa: E402
     EmbeddingSpace,
     WordNotFoundError,
@@ -42,6 +45,7 @@ from embeddings import (  # noqa: E402
     _phrase_tokens,
 )
 from game import build_round_result  # noqa: E402
+from ratelimit import RateLimiter, client_ip, group_for  # noqa: E402
 from word_pairs import get_random_pair  # noqa: E402
 
 load_dotenv()
@@ -84,6 +88,7 @@ async def _load_models():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    gamelog.start_from_env()
     task = asyncio.create_task(_load_models())
     yield
     task.cancel()
@@ -103,6 +108,30 @@ async def lifespan(app: FastAPI):
 # As `def`, FastAPI runs them in its threadpool instead: the loop stays free, and
 # numpy releases the GIL inside BLAS so the heavy part genuinely overlaps.
 app = FastAPI(title="אמצע API - Amtza Game", version="1.0.0", lifespan=lifespan)
+
+limiter = RateLimiter()
+
+
+# Registered BEFORE the CORS middleware on purpose: Starlette makes the last-added
+# middleware the outermost, so CORS wraps this one and its 429 still carries the
+# Access-Control headers. Without them the browser would hide the response and the
+# player would see a generic network failure instead of the message.
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    group = group_for(request.method, request.url.path)
+    if group is not None:
+        ip = client_ip(request.headers, request.client.host if request.client else "")
+        if not limiter.allow(group, ip):
+            # The client knows the game's language and shows its own copy for
+            # "rate_limited"; this message is for anything else calling the API.
+            return JSONResponse(
+                status_code=429,
+                headers={"Retry-After": "5"},
+                content={"detail": {"error": "rate_limited",
+                                    "message": "Too many requests. Try again in a few seconds."}},
+            )
+    return await call_next(request)
+
 
 allowed_origin = os.getenv("ALLOWED_ORIGIN", "*")
 app.add_middleware(
@@ -153,6 +182,16 @@ class GuessRequest(BaseModel):
     # number — an out-of-range value would silently hand out the easiest threshold.
     round_num: int = Field(default=1, ge=1, le=500)
     used_words: List[str] = []
+    # Random per-game id from the browser, used only to group logged rounds.
+    game_id: Optional[str] = Field(default=None, max_length=36)
+
+
+def _valid_uuid(value: Optional[str]) -> Optional[str]:
+    """The game id if it is a real UUID; anything else is stored as no id."""
+    try:
+        return str(uuid.UUID(value)) if value else None
+    except ValueError:
+        return None
 
 
 @app.post("/guess")
@@ -273,6 +312,18 @@ def guess(req: GuessRequest):
         midpoint=midpoint,
         lang=lang,
     )
+
+    gamelog.record({
+        "game_id": _valid_uuid(req.game_id),
+        "lang": lang,
+        "round_num": req.round_num,
+        "word1": req.word1,
+        "word2": req.word2,
+        "player_guess": result.player_guess,
+        "computer_guess": result.computer_guess,
+        "similarity": result.player_computer_similarity,
+        "is_won": result.is_won,
+    })
 
     return {
         "computer_guess": result.computer_guess,
