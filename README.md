@@ -39,13 +39,23 @@ the match bar each round so every game converges.
 
 ### How the computer picks its middle
 
-Two signals, because either one alone gets it wrong:
+Three signals, because no one of them alone gets it right:
 
 1. **Word vectors** (fastText) find candidates related to both words, scored by the
    weaker of the two similarities so the answer is balanced between them.
 2. **Everyday associations** (`backend/data/{lang}_associations.tsv`): for every word
    the computer may say, its category and the words people think of first. A word
    people link to *both* sides gets a bonus.
+
+3. **Better middle-finding vectors, Hebrew** (`backend/data/he_middle.npz`, see
+   `backend/middle_vectors.py`). The game's Hebrew vectors come from Wikipedia. For
+   choosing the computer's word only, Hebrew uses two free sources combined:
+   fastText trained on web text (cc.he.300) and AlephBERT, a Hebrew BERT model. Both
+   were run once on a dev machine (`scripts/build_middle_vectors.py`); the server
+   only reads the 17MB result. Neither beat the Wikipedia vectors alone; together
+   they did (starting pairs 51% → 57%, mid-game with a clear answer 19% → 38%). A
+   pick must still be at least loosely related to both words by the old vectors.
+   Wins, word checks and the closeness bar keep using the old vectors, unchanged.
 
 The second exists because vectors measure which words appear together in text, not
 what a person reaches for. For apple + tree people say *fruit*; the vectors rank fig,
@@ -135,7 +145,7 @@ Open http://localhost:5173. The Vite proxy forwards API calls to `localhost:8000
 
 ### Tests
 
-147 backend tests, none of which need the models, and 46 frontend tests:
+155 backend tests, none of which need the models, and 46 frontend tests:
 
 ```bash
 cd backend && ./venv/bin/python -m unittest discover -s test -v

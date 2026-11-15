@@ -102,6 +102,12 @@ class TestGereshAliases(unittest.TestCase):
                 self.assertEqual(lookup_index(self.space, typed), 0)
                 self.assertIsNotNone(get_word_vector(self.space, typed))
 
+    def test_a_trailing_geresh_is_dropped(self):
+        space = make_space(["קוטג", "חלב"], np.eye(2), "he")
+        for typed in ("קוטג'", "קוטג׳", "קוטג’"):
+            with self.subTest(typed=typed):
+                self.assertEqual(lookup_index(space, typed), 0)
+
     def test_unlisted_loanword_does_not_fall_back_to_its_fragment(self):
         # ג'חנון -> "חנון" means "nerd"; only checked entries may resolve.
         self.assertIsNone(lookup_index(self.space, "ג'חנון"))

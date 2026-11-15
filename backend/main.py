@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field  # noqa: E402
 
 import associations  # noqa: E402
 import gamelog  # noqa: E402
+import middle_vectors  # noqa: E402
 from embeddings import (  # noqa: E402
     EmbeddingSpace,
     WordNotFoundError,
@@ -80,6 +81,7 @@ async def _load_models():
             spaces[lang] = await loop.run_in_executor(None, load_or_download_sync, lang)
             # Read the association map now rather than on the first guess.
             await loop.run_in_executor(None, associations.load, lang)
+            await loop.run_in_executor(None, middle_vectors.load, lang)
             logger.info(f"{lang} model ready")
         models_loaded = True
         logger.info("Both embedding models loaded successfully")

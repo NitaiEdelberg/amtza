@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 
 import associations
+import middle_vectors
 
 logger = logging.getLogger(__name__)
 
@@ -1051,9 +1052,15 @@ def lookup_index(space: EmbeddingSpace, token: str) -> "int | None":
     idx = space.word_to_idx.get(token)
     if idx is None and space.language == "he":
         # Phones type the geresh as ' or ’ as often as ׳; the table uses '.
-        alias = _HE_GERESH_ALIASES.get(token.replace("׳", "'").replace("’", "'"))
+        plain = token.replace("׳", "'").replace("’", "'")
+        alias = _HE_GERESH_ALIASES.get(plain)
         if alias is not None:
             idx = space.word_to_idx.get(alias)
+        elif plain.endswith("'") and len(plain) > 2:
+            # A trailing geresh (קוטג', מסאז', בז') is safe to drop, unlike one in
+            # the middle: the corpus stored the word whole, just without it, so the
+            # rest of the word IS the word. A play-tester's קוטג' was rejected.
+            idx = space.word_to_idx.get(plain[:-1])
     return idx
 
 
@@ -1458,6 +1465,71 @@ ASSOC_STRENGTH = 0.10     # scaled by how strong those links are
 ASSOC_ONE_SIDE = 0.03     # linked to one side only
 
 
+# Weights for the middle-vector path (middle_vectors.py), in z units because its
+# similarities are standardised per query. Swept on scripts/eval_human.py; this
+# setting was the best or tied for best for every source compared, so it isn't
+# fitted to the new vectors alone. A z floor of 0 means "at least averagely
+# related to each word".
+MIDDLE_BOTH_BONUS = 1.5
+MIDDLE_STRENGTH = 1.0
+MIDDLE_ONE_SIDE = 0.2
+MIDDLE_FLOOR = 0.0
+# Also at least loosely related to both words by the old vectors (plain cosine).
+# A pick then needs both models to agree it's related; see the sweep in the
+# commit that set this.
+MIDDLE_OLD_FLOOR = 0.15
+
+
+def _dense_on_pool(space: EmbeddingSpace, pairs, dtype):
+    """{word: value} pairs scattered onto the playable rows (good_indices order)."""
+    out = np.zeros(len(space.good_indices), dtype=dtype)
+    for w, value in pairs:
+        idx = space.word_to_idx.get(w)
+        if idx is not None and space.good_pos[idx] >= 0:
+            out[space.good_pos[idx]] = value
+    return out
+
+
+def _middle_from_table(space: EmbeddingSpace, word1: str, word2: str, exclude: set) -> "str | None":
+    """The computer's word from the better middle vectors, or None to use the old path.
+
+    None when the language has no table, either board word is missing from it,
+    or no playable word clears the floor. The same rules as the old path apply:
+    no used words, no recycled forms of them, playable words only.
+    """
+    table = middle_vectors.load(space.language)
+    if table is None or space.good_pos is None:
+        return None
+    q1 = table.query(normalize_word(word1, space.language))
+    q2 = table.query(normalize_word(word2, space.language))
+    if q1 is None or q2 is None:
+        return None
+    z1 = table.combined_z(space, q1)
+    z2 = table.combined_z(space, q2)
+
+    assoc = associations.load(space.language)
+    l1 = _dense_on_pool(space, assoc.links_of(word1).items(), np.float64) if assoc else 0.0
+    l2 = _dense_on_pool(space, assoc.links_of(word2).items(), np.float64) if assoc else 0.0
+    used = _dense_on_pool(space, ((w, True) for w in exclude), bool)
+    if MIDDLE_OLD_FLOOR > 0:
+        v1, v2 = phrase_vec(space, word1), phrase_vec(space, word2)
+        old_ok = (space.good_matrix @ v1 >= MIDDLE_OLD_FLOOR) & (space.good_matrix @ v2 >= MIDDLE_OLD_FLOOR)
+    else:
+        old_ok = True
+
+    lo = np.minimum(z1, z2)
+    both = (l1 > 0) & (l2 > 0)
+    score = np.where(both, lo + MIDDLE_BOTH_BONUS + MIDDLE_STRENGTH * (l1 + l2) / 2,
+                     lo + MIDDLE_ONE_SIDE * np.maximum(l1, l2))
+    ok = ~used & (z1 >= MIDDLE_FLOOR) & (z2 >= MIDDLE_FLOOR) & np.isfinite(score) & old_ok
+    live = np.flatnonzero(ok)
+    for k in live[np.argsort(-score[live], kind="stable")]:
+        word = space.words[space.good_indices[k]]
+        if not _is_derived_form(word, exclude, space.language):
+            return word
+    return None
+
+
 def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set) -> str:
     """Find the best middle word using min-similarity scoring: min(sim(w,w1), sim(w,w2)).
     This maximises the *weaker* connection, ensuring the result is genuinely balanced
@@ -1466,6 +1538,11 @@ def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set
     """
     v1 = phrase_vec(space, word1)
     v2 = phrase_vec(space, word2)
+
+    picked = _middle_from_table(space, word1, word2, exclude)
+    if picked is not None:
+        return picked
+
     midpoint = v1 + v2
     norm = np.linalg.norm(midpoint)
     if norm > 0:
