@@ -43,7 +43,7 @@ export default function WinScreen({ winMessage, rounds, playerWord, computerWord
         <ShareButton history={history} language={language} />
         <PathHistory history={history} language={language} />
         <button className="btn btn--primary btn--large" onClick={onNewGame}>
-          {isHe ? "משחק חדש 🎮" : "New Game 🎮"}
+          {isHe ? "משחק חדש 🎮" : "New game 🎮"}
         </button>
         {/* Below the New Game button on purpose. A player who has just won is
             about to click something, and an ad above that button is how accidental

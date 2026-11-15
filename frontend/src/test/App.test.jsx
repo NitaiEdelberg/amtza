@@ -75,13 +75,13 @@ describe("App boot states", () => {
 
     // The welcome screen defaults to Hebrew; switch so the whole flow is English.
     await user.click(await screen.findByRole("button", { name: /English/ }));
-    await user.click(screen.getByRole("button", { name: /Let's Play/ }));
+    await user.click(screen.getByRole("button", { name: /Let's play/ }));
     // In a round now: the guess box is showing.
     expect(await screen.findByRole("textbox")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /New game/ }));
     // Back at the welcome screen, ready to start over.
-    expect(await screen.findByRole("button", { name: /Let's Play/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Let's play/ })).toBeInTheDocument();
   });
 
   it("surfaces an error when starting a game fails", async () => {
@@ -125,7 +125,7 @@ describe("App game flow", () => {
     await user.click(await screen.findByRole("button", { name: /בואו נשחק/ }));
     await user.type(await screen.findByRole("textbox", { name: "הניחוש שלכם" }), "אור");
     // Submit stays disabled until the debounced word check comes back.
-    const submit = await screen.findByRole("button", { name: /שלח ניחוש/ });
+    const submit = await screen.findByRole("button", { name: /שלחו ניחוש/ });
     await waitFor(() => expect(submit).toBeEnabled());
     await user.click(submit);
     await user.click(await screen.findByRole("button", { name: /סיבוב הבא/ }, { timeout: 3000 }));
@@ -154,7 +154,7 @@ describe("App game flow", () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: /בואו נשחק/ }));
     await user.type(await screen.findByRole("textbox", { name: "הניחוש שלכם" }), "חנוכה");
-    const submit = await screen.findByRole("button", { name: /שלח ניחוש/ });
+    const submit = await screen.findByRole("button", { name: /שלחו ניחוש/ });
     await waitFor(() => expect(submit).toBeEnabled());
     await user.click(submit);
     await screen.findByRole("button", { name: /שתפו את התוצאה/ }, { timeout: 5000 });

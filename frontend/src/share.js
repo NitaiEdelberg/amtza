@@ -15,8 +15,8 @@ export function shareText(history, language, url) {
   const rounds = history.length;
   const grid = history.map(square).join("");
   const lines = isHe
-    ? [`אמצע 🎯 נפגשתי עם המחשב באמצע בסיבוב ${rounds}`, `התחלנו מ: ${first.word1} + ${first.word2}`, grid, url]
+    ? [`אמצע 🎯 נפגשתי עם המחשב באמצע בסיבוב ${rounds}`, `זוג הפתיחה: ${first.word1} + ${first.word2}`, grid, url]
     : [`Amtza 🎯 Met the computer in the middle in ${rounds} round${rounds === 1 ? "" : "s"}`,
-       `Started from: ${first.word1} + ${first.word2}`, grid, url];
+       `Starting pair: ${first.word1} + ${first.word2}`, grid, url];
   return lines.join("\n");
 }

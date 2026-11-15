@@ -57,6 +57,13 @@ body {
   margin-top: 0.25rem;
 }
 
+.app-title__latin {
+  color: var(--text2);
+  font-size: 0.9rem;
+  letter-spacing: 0.3em;
+  margin: -0.25rem 0 0;
+}
+
 .app-main {
   flex: 1;
   display: flex;

@@ -1,0 +1,80 @@
+# Many simulated players against the live API, from many IPs at once.
+#
+# The API rate-limits per IP, so one machine can't stand in for a crowd. This
+# splits the players across parallel runners (each its own IP) and merges their
+# results into one report on the run's summary page. See scripts/loadtest.py for
+# how a simulated player behaves (paced like a person, not a benchmark loop).
+#
+# Run it by hand: Actions -> loadtest -> Run workflow. It hits production for real
+# and uses some of the shared Render hours, so don't schedule it. Turn on
+# launch-mode first (or run it twice) if the instance may be asleep, or the first
+# minute measures a wake-up instead of the game.
+#
+# Keep players-per-runner at 10 or below: 10 people guessing every ~12s is ~50
+# guesses a minute from one IP, inside the 60/min limit; more per runner and the
+# report measures the limiter.
+name: loadtest
+
+on:
+  workflow_dispatch:
+    inputs:
+      runners:
+        description: "Parallel runners (each is its own IP)"
+        default: "10"
+      players_per_runner:
+        description: "Simulated players per runner (max 10)"
+        default: "10"
+      minutes:
+        description: "Minutes of play after everyone has arrived"
+        default: "3"
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      shards: ${{ steps.s.outputs.shards }}
+    steps:
+      - id: s
+        run: |
+          n=$(( ${{ inputs.runners }} > 20 ? 20 : ${{ inputs.runners }} ))
+          echo "shards=$(seq -s, 1 $n | sed 's/^/[/; s/$/]/')" >> "$GITHUB_OUTPUT"
+
+  players:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJson(needs.plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Play
+        env:
+          API_URL: ${{ vars.API_URL || 'https://amtza-api.onrender.com' }}
+        run: |
+          p=$(( ${{ inputs.players_per_runner }} > 10 ? 10 : ${{ inputs.players_per_runner }} ))
+          python scripts/loadtest.py --api "$API_URL" --players "$p" \
+            --minutes ${{ inputs.minutes }} --seed ${{ matrix.shard }} --out shard-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shard-${{ matrix.shard }}
+          path: shard-${{ matrix.shard }}.json
+
+  report:
+    needs: players
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: shard-*
+          merge-multiple: true
+      - run: python scripts/loadtest.py --merge 'shard-*.json' | tee -a "$GITHUB_STEP_SUMMARY"

@@ -14,7 +14,9 @@ export default function GuessInput({ onSubmit, disabled, currentPair, isLoading,
   const [value, setValue] = useState("");
   const [validation, setValidation] = useState(null); // null | {word, valid, canonical, in_vocab, suggestions}
   const inputRef = useRef(null);
-  const debouncedValue = useDebounce(value, 300);
+  // 500ms rather than 300: the check is the most frequent request the server sees,
+  // and checking mid-word is wasted work. Still well under a typing pause.
+  const debouncedValue = useDebounce(value, 500);
 
   // NOTE: this component is mounted with a key derived from the current pair (see
   // GameBoard), so a new round remounts it and the input/validation reset
@@ -74,10 +76,10 @@ export default function GuessInput({ onSubmit, disabled, currentPair, isLoading,
   if (value.length >= 2 && !validating) {
     if (isSameAsPair) {
       statusClass = "invalid";
-      statusMsg = isHebrew ? "המילה כבר בזוג הנוכחי" : "Word already in current pair";
+      statusMsg = isHebrew ? "המילה כבר בזוג הנוכחי" : "That word is already on screen";
     } else if (checked?.valid === false) {
       statusClass = "invalid";
-      statusMsg = isHebrew ? "המילה לא נמצאה במילון 🤔" : "Word not found in dictionary 🤔";
+      statusMsg = isHebrew ? "את המילה הזאת אנחנו עוד לא מכירים 🤔" : "We don't know that word yet 🤔";
     } else if (checked?.in_vocab === false) {
       // Spelled plausibly, but the model has no vector for it — warn now rather
       // than letting the player submit and get rejected.
@@ -104,7 +106,7 @@ export default function GuessInput({ onSubmit, disabled, currentPair, isLoading,
           onChange={handleChange}
           // A placeholder is not an accessible name — it disappears on input.
           aria-label={isHebrew ? "הניחוש שלכם" : "Your guess"}
-          placeholder={isHebrew ? "כתבו מילה..." : "type a word..."}
+          placeholder={isHebrew ? "כתבו מילה..." : "Type a word…"}
           disabled={disabled || isLoading}
           autoComplete="off"
           autoCorrect="off"
@@ -125,7 +127,7 @@ export default function GuessInput({ onSubmit, disabled, currentPair, isLoading,
       {showSuggestions && (
         <div className="guess-input__suggestions">
           <span className="guess-input__suggestions-label">
-            {isHebrew ? "אולי התכוונתם ל־" : "Did you mean"}
+            {isHebrew ? "אולי התכוונתם ל־" : "Did you mean:"}
           </span>
           {suggestions.map((w) => (
             <button
@@ -146,8 +148,8 @@ export default function GuessInput({ onSubmit, disabled, currentPair, isLoading,
         disabled={!canSubmit}
       >
         {isLoading
-          ? (isHebrew ? "חושב..." : "thinking...")
-          : (isHebrew ? "שלח ניחוש 🎯" : "Submit guess 🎯")}
+          ? (isHebrew ? "חושב..." : "Thinking…")
+          : (isHebrew ? "שלחו ניחוש 🎯" : "Submit guess 🎯")}
       </button>
     </form>
   );

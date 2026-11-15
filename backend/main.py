@@ -249,8 +249,8 @@ def guess(req: GuessRequest):
                 # Reached by digits and symbols, but also by real words the
                 # vocabulary lacks ("halva"), so it must not tell the player
                 # their word isn't one.
-                "message": "את המילה הזאת אנחנו לא מכירים. נסו מילה אחרת?" if lang == "he"
-                           else "We don't know that word yet. Try another one?",
+                "message": "את המילה הזאת אנחנו עוד לא מכירים. אולי מילה אחרת?" if lang == "he"
+                           else "We don't know that word yet. Maybe try another?",
                 "word": req.player_guess,
                 "suggestions": [],
             },
@@ -269,8 +269,8 @@ def guess(req: GuessRequest):
             422,
             detail={
                 "error": "word_not_found",
-                "message": f"המילה '{req.player_guess}' לא נמצאה במילון" if lang == "he"
-                           else f"Word '{req.player_guess}' not found in vocabulary",
+                "message": f"את המילה '{req.player_guess}' אנחנו עוד לא מכירים" if lang == "he"
+                           else f"We don't know '{req.player_guess}' yet",
                 "word": req.player_guess,
                 "suggestions": suggestions,
             },
@@ -283,8 +283,8 @@ def guess(req: GuessRequest):
             422,
             detail={
                 "error": "same_as_pair",
-                "message": "הניחוש חייב להיות שונה מהמילים הקיימות" if lang == "he"
-                           else "Your guess must be different from the current pair words",
+                "message": "הניחוש צריך להיות שונה משתי המילים שעל המסך" if lang == "he"
+                           else "Your guess can't be one of the two words on screen",
             },
         )
 
@@ -301,7 +301,14 @@ def guess(req: GuessRequest):
         midpoint = compute_midpoint(space, req.word1, req.word2)
         computer_guess = _cached_middle(lang, req.word1, req.word2, frozenset(exclude))
     except WordNotFoundError as e:
-        raise HTTPException(422, detail={"error": "pair_word_not_found", "message": str(e)})
+        raise HTTPException(422, detail={
+            "error": "pair_word_not_found",
+            # str(e) is just the bare word that failed, which on screen read as
+            # a one-word error message.
+            "message": "משהו השתבש עם זוג המילים. נסו משחק חדש" if lang == "he"
+                       else "Something went wrong with this pair. Try a new game",
+            "word": str(e),
+        })
 
     if computer_guess is None:
         # Extremely rare: the exclusion set has grown so large no valid middle word
@@ -310,8 +317,8 @@ def guess(req: GuessRequest):
             422,
             detail={
                 "error": "no_middle_word",
-                "message": "המחשב לא מצא מילה מתאימה לאמצע — נסו זוג מילים חדש" if lang == "he"
-                           else "The computer couldn't find a middle word — try a new pair",
+                "message": "המחשב לא מצא מילה באמצע. נסו משחק חדש" if lang == "he"
+                           else "The computer couldn't find a middle word. Try a new game",
             },
         )
 

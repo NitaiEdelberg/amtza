@@ -64,7 +64,7 @@ export default function GameBoard({
             </button>
             {hintWords.length > 0 && (
               <span className="hint-words" dir={isHe ? "rtl" : "ltr"}>
-                {isHe ? "כיוון: " : "Direction: "}
+                {isHe ? "כיוונים: " : "Some directions: "}
                 {hintWords.join(" · ")}
               </span>
             )}
@@ -100,7 +100,7 @@ export default function GameBoard({
           )}
           {!lastRound.is_won && (
             <button className="btn btn--primary" onClick={onNextRound}>
-              {isHe ? "סיבוב הבא ←" : "Next Round →"}
+              {isHe ? "סיבוב הבא ←" : "Next round →"}
             </button>
           )}
         </>

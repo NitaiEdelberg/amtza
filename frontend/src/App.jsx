@@ -73,7 +73,7 @@ export default function App() {
       if (!ready) {
         setStartError(
           lang === "he"
-            ? "השרת לא מגיב. הוא כנראה נרדם. נסו שוב בעוד רגע."
+            ? "השרת לא מגיב, כנראה נרדם. נסו שוב בעוד רגע."
             : "The server isn't responding. It may be asleep. Try again in a moment."
         );
         setIsLoading(false);
@@ -181,6 +181,9 @@ export default function App() {
     <div className="app" dir={isHe ? "rtl" : "ltr"}>
       <header className="app-header">
         <h1 className="app-title">אמצע</h1>
+        {/* The logo is Hebrew in both modes; a reader who doesn't read Hebrew
+            should still be able to say the game's name. */}
+        {!isHe && <p className="app-title__latin">Amtza</p>}
         <p className="app-subtitle">
           {isHe ? "מצאו את המילה שבאמצע" : "Find the word in the middle"}
         </p>
@@ -218,7 +221,7 @@ export default function App() {
               >
                 {waking
                   ? (selectedLang === "he" ? "מעירים את השרת… ⏳" : "Waking the server… ⏳")
-                  : (selectedLang === "he" ? "בואו נשחק! 🎮" : "Let's Play! 🎮")}
+                  : (selectedLang === "he" ? "בואו נשחק! 🎮" : "Let's play! 🎮")}
               </button>
               {waking && (
                 <p className="idle-screen__waking" role="status">
@@ -227,8 +230,8 @@ export default function App() {
                         ? "אין תשובה מהשרת. עוד מנסים…"
                         : "No answer yet. Still trying…")
                     : (selectedLang === "he"
-                        ? "הפעם הראשונה ביום לוקחת כדקה. השרת נרדם כשאף אחד לא משחק"
-                        : "The first visit of the day takes about a minute. The server sleeps when nobody is playing")}
+                        ? "הכניסה הראשונה ביום יכולה לקחת עד דקה, כי השרת נרדם כשאף אחד לא משחק."
+                        : "The first game of the day can take up to a minute, because the server naps when nobody is playing.")}
                 </p>
               )}
               {startError && (
@@ -241,17 +244,17 @@ export default function App() {
                 <>
                   <ul className="idle-screen__rules" dir="rtl">
                     <li>🧠 חשבו על מילה שבאמצע בין שתי המילים</li>
-                    <li>🤫 אתם שולחים בו זמנית, לא רואים אחד את השני!</li>
+                    <li>🤫 אתם והמחשב עונים בו־זמנית, בלי לראות את התשובה של השני!</li>
                     <li>🔄 לא נפגשתם? שתי המילים שלכם הופכות לזוג החדש</li>
                     <li>🚫 אי אפשר לחזור על מילה שכבר נאמרה</li>
-                    <li>🏆 ניצחתם כשמגיעים לאותה מילה</li>
+                    <li>🏆 מנצחים כששניכם מגיעים לאותה מילה</li>
                   </ul>
                 </>
               ) : (
                 <>
                   <ul className="idle-screen__rules" dir="ltr">
-                    <li>🧠 Think of a word that sits between the two given words</li>
-                    <li>🤫 You both submit at the same time, no peeking at each other's guess!</li>
+                    <li>🧠 Think of a word that sits between the two words</li>
+                    <li>🤫 You and the computer answer at the same time. No peeking!</li>
                     <li>🔄 No match? Both of your words become the new pair</li>
                     <li>🚫 A word that's already been said can't be used again</li>
                     <li>🏆 You win when you both land on the same word</li>

@@ -56,7 +56,7 @@ FUNNY_MESSAGES_HE = {
     "far": [
         "עוד לא באותו ראש, אבל מתקרבים 🤷",
         "כיוון שונה, נסו לחשוב על מה שמחבר את שתיהן 💡",
-        "לא באותו מקום, אבל לא נואש! 💪",
+        "לא באותו מקום, אבל לא מתייאשים! 💪",
     ],
     "medium": [
         "קרוב! אתם באותו תחום 🎯",
@@ -90,11 +90,11 @@ FUNNY_MESSAGES_EN = {
 }
 
 EASTER_EGGS = {
-    frozenset({"חביתה", "ביצה"}): "מחזור אכזרי... מה קדם למה? 🐔🥚",
-    frozenset({"שלום", "מלחמה"}): "שנסיים עם שלום, בסוף... ✌️",
+    frozenset({"חביתה", "ביצה"}): "מה בא קודם, הביצה או החביתה? 🥚🍳",
+    frozenset({"שלום", "מלחמה"}): "שרק נסיים בשלום ✌️",
     frozenset({"אמא", "אבא"}): "ביחד או לחוד? 👨‍👩‍👧",
     frozenset({"ים", "חול"}): "חופשה! 🏖️",
-    frozenset({"love", "hate"}): "Freud would be proud. 🛋️",
+    frozenset({"love", "hate"}): "Freud would be proud 🛋️",
     frozenset({"cat", "internet"}): "You know exactly where this is going 🐱",
     frozenset({"fire", "ice"}): "A Song of... 🐉",
     frozenset({"day", "night"}): "Somewhere, someone is sleeping 🌙",
@@ -103,9 +103,9 @@ EASTER_EGGS = {
 }
 
 WIN_MESSAGES_HE = [
-    "ניצחנו! 🎉 הגעתם לאמצע!",
-    "מושלם! 🌟 המחשב ואתם חשבתם אותו דבר!",
-    "יאללה! 🎊 הגעתם לאמצע ביחד!",
+    "ניצחנו! 🎉 הגענו לאמצע!",
+    "מושלם! 🌟 אתם והמחשב חשבתם על אותו דבר!",
+    "יאללה! 🎊 נפגשנו באמצע!",
     "בום! 💥 זה בדיוק האמצע!",
 ]
 
@@ -120,15 +120,15 @@ WIN_MESSAGES_EN = [
 # never claim the two words were the same — they say the words were close enough, and
 # name both, so the player can see exactly what happened.
 NEAR_WIN_MESSAGES_HE = [
-    "מספיק קרוב! 🎯 '{a}' ו'{b}' זה כמעט אותו דבר.",
-    "סגרנו! 🤝 '{a}' ו'{b}' — בעצם אותו רעיון.",
-    "כמעט מילה במילה! ✨ '{a}' מול '{b}' — נחשב!",
+    "מספיק קרוב! 🎯 '{a}' ו־'{b}' הן כמעט אותו דבר.",
+    "סגרנו! 🤝 '{a}' ו־'{b}' הן בעצם אותו רעיון.",
+    "כמעט מילה במילה! ✨ '{a}' מול '{b}', נחשב!",
 ]
 
 NEAR_WIN_MESSAGES_EN = [
     "Close enough! 🎯 '{a}' and '{b}' are practically the same idea.",
-    "That'll do! 🤝 '{a}' vs '{b}' — near enough to call it.",
-    "Almost word for word! ✨ '{a}' and '{b}' — we'll take it.",
+    "That'll do! 🤝 '{a}' vs '{b}' is near enough to call it.",
+    "Almost word for word! ✨ '{a}' and '{b}', we'll take it.",
 ]
 
 
