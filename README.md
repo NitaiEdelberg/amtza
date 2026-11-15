@@ -135,7 +135,7 @@ Open http://localhost:5173. The Vite proxy forwards API calls to `localhost:8000
 
 ### Tests
 
-143 backend tests, none of which need the models, and 45 frontend tests:
+147 backend tests, none of which need the models, and 46 frontend tests:
 
 ```bash
 cd backend && ./venv/bin/python -m unittest discover -s test -v

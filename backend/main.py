@@ -218,8 +218,8 @@ def _cached_middle(lang: str, word1: str, word2: str, exclude: frozenset) -> Opt
 
 
 @lru_cache(maxsize=4096)
-def _cached_hints(lang: str, word1: str, word2: str) -> tuple:
-    return tuple(get_hints(spaces[lang], word1, word2))
+def _cached_hints(lang: str, word1: str, word2: str, used: frozenset) -> tuple:
+    return tuple(get_hints(spaces[lang], word1, word2, used=used))
 
 
 def _valid_uuid(value: Optional[str]) -> Optional[str]:
@@ -285,6 +285,18 @@ def guess(req: GuessRequest):
                 "error": "same_as_pair",
                 "message": "הניחוש צריך להיות שונה משתי המילים שעל המסך" if lang == "he"
                            else "Your guess can't be one of the two words on screen",
+            },
+        )
+
+    # The rules say no word is said twice. Same check the input box makes, so the
+    # API is never more permissive than the screen.
+    if player_canonical in {normalize_word(w, lang) for w in req.used_words}:
+        raise HTTPException(
+            422,
+            detail={
+                "error": "already_used",
+                "message": "המילה הזאת כבר נאמרה במשחק הזה" if lang == "he"
+                           else "That word was already said in this game",
             },
         )
 
@@ -416,6 +428,7 @@ def _cached_validation(lang: str, word: str) -> tuple:
 class HintRequest(BaseModel):
     word1: str
     word2: str
+    used_words: List[str] = []
 
 
 @app.post("/hint")
@@ -426,7 +439,10 @@ def hint(req: HintRequest):
         raise HTTPException(500, f"No embedding space for language: {lang}")
     space = spaces[lang]
     try:
-        hints = list(_cached_hints(lang, req.word1, req.word2))
+        used: set = set()
+        for w in req.used_words:
+            used |= _phrase_tokens(space, w)
+        hints = list(_cached_hints(lang, req.word1, req.word2, frozenset(used)))
     except WordNotFoundError as e:
         raise HTTPException(422, detail={"error": "word_not_found", "message": str(e)})
     return {"hints": hints, "language": lang}

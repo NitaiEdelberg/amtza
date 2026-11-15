@@ -69,6 +69,24 @@ class TestHintsDoNotLeakTheAnswer(unittest.TestCase):
         space = make_space(WORDS)
         self.assertEqual(len(get_hints(space, "fire", "ice")), 3)
 
+    def test_words_already_played_are_never_hints(self):
+        space = make_space(WORDS)
+        first = get_hints(space, "fire", "ice")
+        again = get_hints(space, "fire", "ice", used={first[0]})
+        self.assertNotIn(first[0], again)
+
+    def test_the_protected_answer_is_computed_with_the_games_used_words(self):
+        # Otherwise from round 2 on it can differ from the computer's real
+        # answer, and the real one can be handed out as a hint.
+        seen = {}
+
+        def spy(space, w1, w2, exclude):
+            seen["exclude"] = set(exclude)
+            return "answer"
+        embeddings.find_best_middle = spy
+        get_hints(make_space(WORDS), "fire", "ice", used={"n1"})
+        self.assertIn("n1", seen["exclude"])
+
     def test_hints_exclude_the_pair_words_themselves(self):
         space = make_space(WORDS)
         hints = get_hints(space, "fire", "ice")

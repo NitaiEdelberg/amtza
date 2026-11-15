@@ -1629,7 +1629,8 @@ def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set
     return best_word
 
 
-def get_hints(space: EmbeddingSpace, word1: str, word2: str, n_hints: int = 3) -> list:
+def get_hints(space: EmbeddingSpace, word1: str, word2: str, n_hints: int = 3,
+              used: "set | frozenset" = frozenset()) -> list:
     """Return hint words near the midpoint that are NOT the computer's own answer.
 
     Skipping the first few neighbours is not enough on its own: find_best_middle
@@ -1638,9 +1639,14 @@ def get_hints(space: EmbeddingSpace, word1: str, word2: str, n_hints: int = 3) -
     — measured at 7 of 33 starting pairs (sun+moon -> sunset, coffee+sleep -> drink,
     city+forest -> park). A hint that hands over the answer isn't a hint, so the
     answer is excluded explicitly.
+
+    `used` is every word already played this game (canonical tokens). Without it a
+    hint could offer a word the rules forbid, and, worse, the answer protected
+    above was computed without the game's exclusions, so from round 2 on it could
+    differ from the computer's real answer, which the hint might then give away.
     """
     midpoint = compute_midpoint(space, word1, word2)
-    exclude = _phrase_tokens(space, word1) | _phrase_tokens(space, word2)
+    exclude = _phrase_tokens(space, word1) | _phrase_tokens(space, word2) | set(used)
     try:
         answer = find_best_middle(space, word1, word2, exclude=set(exclude))
         if answer:

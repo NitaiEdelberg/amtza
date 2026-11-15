@@ -20,6 +20,7 @@ export default function GameBoard({
   guessError,
   onClearGuessError,
   onNewGame,
+  usedWords = [],
 }) {
   const isRevealing = gamePhase === "revealing";
   const isHe = currentPair?.language === "he";
@@ -51,6 +52,7 @@ export default function GameBoard({
             isLoading={isLoading}
             error={guessError}
             onClearError={onClearGuessError}
+            usedWords={usedWords}
           />
           <div className="game-board__hint-row">
             <button
@@ -80,6 +82,14 @@ export default function GameBoard({
               {isHe ? "משחק חדש" : "New game"}
             </button>
           </div>
+          {/* Most games end in a few rounds; the rest can wander. Play-testers
+              would have quit long before round 15, and the New game button is
+              deliberately quiet, so point at it once a game has gone long. */}
+          {roundNum >= 8 && (
+            <p className="game-board__stuck">
+              {isHe ? "תקועים? אין בושה להתחיל משחק חדש 🙂" : "Stuck? No shame in starting a new game 🙂"}
+            </p>
+          )}
         </>
       )}
 

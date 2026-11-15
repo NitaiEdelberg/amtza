@@ -32,6 +32,9 @@ export default function App() {
   // A ref, not state: nothing renders from it — it only decides whether pressing
   // Play can go straight through — so re-rendering the app on each poll is waste.
   const readyLangsRef = useRef([]);
+  // Starting pairs from this visit's recent games. A play-tester got the same
+  // pair twice in a row; with ~100 pairs per language that happens to someone.
+  const recentPairsRef = useRef([]);
 
   // Warm the backend the moment the page opens, and keep a note of which
   // languages are playable.
@@ -83,7 +86,12 @@ export default function App() {
     }
 
     try {
-      const pair = await getRandomPair(lang);
+      let pair = await getRandomPair(lang);
+      const key = (p) => `${p.word1}|${p.word2}`;
+      for (let i = 0; i < 3 && recentPairsRef.current.includes(key(pair)); i++) {
+        pair = await getRandomPair(lang);
+      }
+      recentPairsRef.current = [key(pair), ...recentPairsRef.current].slice(0, 8);
       setCurrentPair(pair);
       setGameId(newGameId());
       setHistory([]);
@@ -161,7 +169,7 @@ export default function App() {
   async function handleGetHint() {
     if (hintUsed || !currentPair) return;
     try {
-      const res = await getHint(currentPair.word1, currentPair.word2);
+      const res = await getHint(currentPair.word1, currentPair.word2, usedWords);
       setHintWords(res.hints || []);
       setHintUsed(true);
     } catch {
@@ -281,6 +289,7 @@ export default function App() {
             onNewGame={handleNewGame}
             hintWords={hintWords}
             hintUsed={hintUsed}
+            usedWords={usedWords}
           />
         )}
 

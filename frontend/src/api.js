@@ -133,11 +133,11 @@ export async function validateWord(word) {
   return result;
 }
 
-export async function getHint(word1, word2) {
+export async function getHint(word1, word2, usedWords = []) {
   return request(`${BASE_URL}/hint`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ word1, word2 }),
+    body: JSON.stringify({ word1, word2, used_words: usedWords }),
   });
 }
 

@@ -10,7 +10,7 @@ function useDebounce(value, delay) {
   return debounced;
 }
 
-export default function GuessInput({ onSubmit, disabled, currentPair, isLoading, error, onClearError }) {
+export default function GuessInput({ onSubmit, disabled, currentPair, isLoading, error, onClearError, usedWords = [] }) {
   const [value, setValue] = useState("");
   const [validation, setValidation] = useState(null); // null | {word, valid, canonical, in_vocab, suggestions}
   const inputRef = useRef(null);
@@ -61,9 +61,14 @@ export default function GuessInput({ onSubmit, disabled, currentPair, isLoading,
   const validating =
     debouncedValue.trim().length >= 2 && validation?.word !== debouncedValue.trim();
   const isSameAsPair = checked?.canonical && pairWords.includes(checked.canonical.toLowerCase());
+  // The rules promise no word is said twice. The computer always kept that; the
+  // player could repeat themselves, and nothing explained why an obvious answer
+  // never came from the computer once it had been said.
+  const isUsedBefore = !isSameAsPair && checked?.canonical &&
+    usedWords.some((w) => w.toLowerCase() === checked.canonical.toLowerCase());
   const canSubmit =
     !disabled && !isLoading && value.trim().length > 0 &&
-    checked?.valid && !isSameAsPair;
+    checked?.valid && !isSameAsPair && !isUsedBefore;
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -77,6 +82,9 @@ export default function GuessInput({ onSubmit, disabled, currentPair, isLoading,
     if (isSameAsPair) {
       statusClass = "invalid";
       statusMsg = isHebrew ? "המילה כבר בזוג הנוכחי" : "That word is already on screen";
+    } else if (isUsedBefore) {
+      statusClass = "invalid";
+      statusMsg = isHebrew ? "המילה הזאת כבר נאמרה במשחק הזה" : "That word was already said in this game";
     } else if (checked?.valid === false) {
       statusClass = "invalid";
       statusMsg = isHebrew ? "את המילה הזאת אנחנו עוד לא מכירים 🤔" : "We don't know that word yet 🤔";

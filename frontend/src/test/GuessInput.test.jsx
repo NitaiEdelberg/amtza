@@ -49,6 +49,18 @@ describe("GuessInput", () => {
     expect(screen.getByRole("button", { name: /שלחו ניחוש/ })).toBeDisabled();
   });
 
+  it("blocks a word already said earlier in the game", async () => {
+    // The rules promise no repeats; the computer always kept that, the player
+    // could break it.
+    const user = userEvent.setup();
+    stubValidate({ valid: true, canonical: "חלב", language: "he", in_vocab: true, suggestions: [] });
+    render(<GuessInput onSubmit={() => {}} currentPair={hebrewPair} usedWords={["תה", "חלב", "שבת", "קפה"]} />);
+
+    await user.type(screen.getByRole("textbox"), "חלב");
+    expect(await screen.findByText(/כבר נאמרה במשחק הזה/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /שלחו ניחוש/ })).toBeDisabled();
+  });
+
   it("warns before submitting when the word has no vector, and offers alternatives", async () => {
     const user = userEvent.setup();
     stubValidate({

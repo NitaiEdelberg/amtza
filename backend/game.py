@@ -220,12 +220,14 @@ def get_funny_message(similarity: float, lang: str, word1: str, word2: str) -> O
 
     # Same cut-offs as the bar's colours in RevealCard.jsx (red < 40 <= orange <
     # 70 <= green), so the words never contradict the colour: a play-through
-    # showed "Getting really close" beside a red 31%.
+    # showed "Getting really close" beside a red 31%. "So close" waits for green:
+    # Hebrew food words sit near each other, and "almost the same word" for
+    # mango vs beans (0.55-0.70) read as random.
     if similarity < 0.20:
         return random.choice(messages["very_far"])
     elif similarity < 0.40:
         return random.choice(messages["far"])
-    elif similarity < 0.55:
+    elif similarity < 0.70:
         return random.choice(messages["medium"])
     return random.choice(messages["close"])
 
