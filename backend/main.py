@@ -14,6 +14,8 @@ for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
     os.environ.setdefault(_v, "1")
 
 import asyncio  # noqa: E402
+from functools import lru_cache  # noqa: E402
+import json  # noqa: E402
 import uuid  # noqa: E402
 import logging  # noqa: E402
 from contextlib import asynccontextmanager  # noqa: E402
@@ -21,8 +23,7 @@ from typing import Dict, List, Optional  # noqa: E402
 
 import numpy as np  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
-from fastapi import FastAPI, HTTPException, Request  # noqa: E402
-from fastapi.responses import JSONResponse  # noqa: E402
+from fastapi import FastAPI, HTTPException  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
@@ -112,25 +113,45 @@ app = FastAPI(title="אמצע API - Amtza Game", version="1.0.0", lifespan=lifes
 limiter = RateLimiter()
 
 
-# Registered BEFORE the CORS middleware on purpose: Starlette makes the last-added
-# middleware the outermost, so CORS wraps this one and its 429 still carries the
-# Access-Control headers. Without them the browser would hide the response and the
-# player would see a generic network failure instead of the message.
-@app.middleware("http")
-async def rate_limit(request: Request, call_next):
-    group = group_for(request.method, request.url.path)
-    if group is not None:
-        ip = client_ip(request.headers, request.client.host if request.client else "")
-        if not limiter.allow(group, ip):
-            # The client knows the game's language and shows its own copy for
-            # "rate_limited"; this message is for anything else calling the API.
-            return JSONResponse(
-                status_code=429,
-                headers={"Retry-After": "5"},
-                content={"detail": {"error": "rate_limited",
-                                    "message": "Too many requests. Try again in a few seconds."}},
-            )
-    return await call_next(request)
+class RateLimitMiddleware:
+    """Per-IP limits (see ratelimit.py), as plain ASGI.
+
+    Not @app.middleware("http"): that wraps every request in Starlette's
+    BaseHTTPMiddleware, which streams the response through an extra task and was
+    measured as most of a /health request's CPU. On a 0.1-CPU server per-request
+    overhead is the capacity.
+
+    Added BEFORE the CORS middleware on purpose: Starlette makes the last-added
+    middleware the outermost, so CORS wraps this one and its 429 still carries the
+    Access-Control headers. Without them the browser would hide the response and
+    the player would see a generic network failure instead of the message.
+    """
+
+    _BODY = json.dumps({"detail": {"error": "rate_limited",
+                                   "message": "Too many requests. Try again in a few seconds."}}).encode()
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            group = group_for(scope["method"], scope["path"])
+            if group is not None:
+                headers = {k.decode("latin-1"): v.decode("latin-1") for k, v in scope["headers"]
+                           if k in (b"cf-connecting-ip", b"x-forwarded-for")}
+                ip = client_ip(headers, (scope.get("client") or ("",))[0])
+                if not limiter.allow(group, ip):
+                    # The client knows the game's language and shows its own copy
+                    # for "rate_limited"; this message is for anything else.
+                    await send({"type": "http.response.start", "status": 429,
+                                "headers": [(b"content-type", b"application/json"),
+                                            (b"retry-after", b"5")]})
+                    await send({"type": "http.response.body", "body": self._BODY})
+                    return
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(RateLimitMiddleware)
 
 
 allowed_origin = os.getenv("ALLOWED_ORIGIN", "*")
@@ -184,6 +205,21 @@ class GuessRequest(BaseModel):
     used_words: List[str] = []
     # Random per-game id from the browser, used only to group logged rounds.
     game_id: Optional[str] = Field(default=None, max_length=36)
+
+
+# The computer's answer depends only on the pair and the words already used, so
+# identical requests can share it. They are common: every player starts from one
+# of ~210 pairs, so round 1 repeats constantly, and hints are per pair. On a
+# 0.1-CPU server a cache hit is capacity handed back to everyone else. Bounded,
+# and cleared by a deploy, which is also the only way the answers can change.
+@lru_cache(maxsize=8192)
+def _cached_middle(lang: str, word1: str, word2: str, exclude: frozenset) -> Optional[str]:
+    return find_best_middle(spaces[lang], word1, word2, exclude=set(exclude))
+
+
+@lru_cache(maxsize=4096)
+def _cached_hints(lang: str, word1: str, word2: str) -> tuple:
+    return tuple(get_hints(spaces[lang], word1, word2))
 
 
 def _valid_uuid(value: Optional[str]) -> Optional[str]:
@@ -263,7 +299,7 @@ def guess(req: GuessRequest):
 
     try:
         midpoint = compute_midpoint(space, req.word1, req.word2)
-        computer_guess = find_best_middle(space, req.word1, req.word2, exclude=exclude)
+        computer_guess = _cached_middle(lang, req.word1, req.word2, frozenset(exclude))
     except WordNotFoundError as e:
         raise HTTPException(422, detail={"error": "pair_word_not_found", "message": str(e)})
 
@@ -346,6 +382,14 @@ def validate(word: str):
     _require_models(lang)
     if lang not in spaces:
         raise HTTPException(500, f"No embedding space for language: {lang}")
+    return dict(_cached_validation(lang, word))
+
+
+# Called while the player types, so it is the most frequent request there is, and
+# a word the vocabulary lacks (half-typed words usually) triggers a spelling
+# search across all 150k words. The answer depends only on the word.
+@lru_cache(maxsize=20000)
+def _cached_validation(lang: str, word: str) -> tuple:
     space = spaces[lang]
     canonical = normalize_word(word, lang)
     valid = is_valid_word(space, word)
@@ -353,13 +397,13 @@ def validate(word: str):
     # vector. Report that separately so the UI can warn *before* the player commits
     # to a guess, and offer alternatives it does know.
     in_vocab = any(lookup_index(space, t) is not None for t in canonical.split())
-    return {
-        "valid": valid,
-        "canonical": canonical,
-        "language": lang,
-        "in_vocab": in_vocab,
-        "suggestions": [] if in_vocab else suggest_similar(space, word),
-    }
+    return (
+        ("valid", valid),
+        ("canonical", canonical),
+        ("language", lang),
+        ("in_vocab", in_vocab),
+        ("suggestions", [] if in_vocab else suggest_similar(space, word)),
+    )
 
 
 class HintRequest(BaseModel):
@@ -375,7 +419,7 @@ def hint(req: HintRequest):
         raise HTTPException(500, f"No embedding space for language: {lang}")
     space = spaces[lang]
     try:
-        hints = get_hints(space, req.word1, req.word2)
+        hints = list(_cached_hints(lang, req.word1, req.word2))
     except WordNotFoundError as e:
         raise HTTPException(422, detail={"error": "word_not_found", "message": str(e)})
     return {"hints": hints, "language": lang}

@@ -84,6 +84,10 @@ class EmbeddingSpace:
     # avoid touching the big half-precision matrix at all. See _nearest_good_indices.
     good_matrix: "np.ndarray | None" = None   # float32 (G, 300)
     good_indices: "np.ndarray | None" = None  # int32 (G,) — position in `words`
+    good_pos: "np.ndarray | None" = None      # int32 (N,) — row in good_matrix, or -1
+    # phrase -> normalised vector. One guess used to compute the same two vectors
+    # six times; bounded by _PHRASE_CACHE_MAX.
+    _phrase_cache: dict = field(default_factory=dict)
 
 
 class WordNotFoundError(Exception):
@@ -459,6 +463,8 @@ def _build_good_submatrix(space: EmbeddingSpace) -> None:
         return
     space.good_indices = np.flatnonzero(space.good_mask).astype(np.int32)
     space.good_matrix = space.matrix[space.good_indices].astype(np.float32)
+    space.good_pos = np.full(len(space.words), -1, dtype=np.int32)
+    space.good_pos[space.good_indices] = np.arange(len(space.good_indices), dtype=np.int32)
     logger.info(f"Good-word submatrix for {space.language}: "
                 f"{space.good_matrix.shape[0]:,} rows, "
                 f"{space.good_matrix.nbytes / 1e6:.1f}MB float32")
@@ -1059,8 +1065,28 @@ def get_word_vector(space: EmbeddingSpace, word: str) -> "np.ndarray | None":
     return _row(space, idx)
 
 
+_PHRASE_CACHE_MAX = 20_000   # ~1.2KB each: ~25MB worst case
+
+
 def phrase_vec(space: EmbeddingSpace, phrase: str) -> np.ndarray:
-    """Average vectors of tokens in a phrase (for multi-word starting pairs)."""
+    """Average vectors of tokens in a phrase (for multi-word starting pairs).
+
+    Memoised per space. Callers must not modify the returned array in place.
+    """
+    cached = space._phrase_cache.get(phrase)
+    if cached is not None:
+        return cached
+    v = _phrase_vec_uncached(space, phrase)
+    # Shared between requests from now on, so an in-place edit anywhere would
+    # corrupt it for everyone. Read-only turns that bug into an immediate error.
+    v.setflags(write=False)
+    if len(space._phrase_cache) >= _PHRASE_CACHE_MAX:
+        space._phrase_cache.clear()
+    space._phrase_cache[phrase] = v
+    return v
+
+
+def _phrase_vec_uncached(space: EmbeddingSpace, phrase: str) -> np.ndarray:
     tokens = phrase.split()
     vecs = []
     for t in tokens:
@@ -1406,8 +1432,11 @@ def _is_derived_form(word: str, played: set, lang: str) -> bool:
 
 
 def _too_close_to_one_end(s1: float, s2: float, ceiling: float) -> bool:
-    """Whether a candidate is bound to one endpoint rather than between the two."""
-    return max(s1, s2) > ceiling and abs(s1 - s2) > _IMBALANCE_TOL
+    """Whether a candidate is bound to one endpoint rather than between the two.
+
+    Works elementwise on arrays too, which is how find_best_middle calls it.
+    """
+    return (np.maximum(s1, s2) > ceiling) & (np.abs(np.subtract(s1, s2)) > _IMBALANCE_TOL)
 
 
 # How much an everyday association is worth next to cosine similarity (see
@@ -1466,7 +1495,7 @@ def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set
     links1 = assoc.links_of(word1) if assoc is not None else {}
     links2 = assoc.links_of(word2) if assoc is not None else {}
     if assoc is not None:
-        have = set(int(i) for i in indices)
+        have = set(indices.tolist())
         extra = []
         for w in links1.keys() | links2.keys():
             idx = space.word_to_idx.get(w)
@@ -1498,9 +1527,21 @@ def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set
     # took 2.7s wall against 150ms of actual work. Batched, the loop is pure Python
     # over precomputed floats and the numpy work is two calls that release the GIL
     # for their whole duration.
-    cand = space.matrix[indices].astype(np.float32)  # (C, 300)
-    sims1 = cand @ v1
-    sims2 = cand @ v2
+    #
+    # When the playable float32 submatrix exists, score all of it (~2k rows, two
+    # tiny matmuls) and index the candidates' rows, rather than gathering ~800
+    # float16 rows and upcasting them on every guess: that copy was the largest
+    # single cost of a guess. Same stored values, so the same similarities.
+    if space.good_matrix is not None and space.good_pos is not None:
+        pos = space.good_pos[indices]
+        sims1 = (space.good_matrix @ v1)[pos]
+        sims2 = (space.good_matrix @ v2)[pos]
+        all_good = True   # every index came from the playable set
+    else:
+        cand = space.matrix[indices].astype(np.float32)  # (C, 300)
+        sims1 = cand @ v1
+        sims2 = cand @ v2
+        all_good = False
 
     def scan(accept):
         """First candidate (in nearest-first order) satisfying `accept(s1, s2)`."""
@@ -1516,34 +1557,59 @@ def find_best_middle(space: EmbeddingSpace, word1: str, word2: str, exclude: set
                 return word
         return None
 
-    best_word, best_score = None, -1.0
-    for pos, idx in enumerate(indices):
-        word = space.words[idx]
-        if word in exclude or not _is_good_idx(space, idx):
-            continue
-        s1 = float(sims1[pos])
-        s2 = float(sims2[pos])
-        l1 = links1.get(word, 0.0)
-        l2 = links2.get(word, 0.0)
-        if l1 > 0 and l2 > 0:
-            # People connect it to both words. The vectors still have to agree it
-            # is at least loosely related to each (ASSOC_FLOOR), but the balance
-            # and ceiling rules are for guessing a middle from geometry alone, and
-            # this one isn't a guess.
-            if s1 < ASSOC_FLOOR or s2 < ASSOC_FLOOR:
-                continue
-            score = min(s1, s2) + ASSOC_BOTH_BONUS + ASSOC_STRENGTH * (l1 + l2) / 2
-        else:
-            if s1 < MIN_FLOOR or s2 < MIN_FLOOR:
-                continue
-            if _too_close_to_one_end(s1, s2, sim_ceiling):
-                continue
-            score = min(s1, s2) + ASSOC_ONE_SIDE * max(l1, l2)
-        # Checked last, and only for a would-be winner: it is the costliest test
-        # and almost every candidate has already lost on score.
-        if score > best_score and not _is_derived_form(word, exclude, space.language):
-            best_score = score
+    # The main pass, vectorised. It used to be a Python loop over ~800
+    # candidates, which on a 0.1-CPU server was a real share of each guess's cost.
+    # Arithmetic is float64 to match the Python floats that loop used, and ties
+    # still go to the candidate nearest the midpoint (stable sort over the
+    # nearest-first order, as the loop's strict ">" did).
+    if all_good:
+        # The used words and the association links are small (tens of words)
+        # while the candidates number ~1000, so map the small sets onto the
+        # candidates' rows instead of testing every candidate against them.
+        n_good = space.good_matrix.shape[0]
+
+        def on_rows(words_to_values, dtype):
+            dense = np.zeros(n_good, dtype=dtype)
+            for w, value in words_to_values:
+                idx = space.word_to_idx.get(w)
+                if idx is not None and space.good_pos[idx] >= 0:
+                    dense[space.good_pos[idx]] = value
+            return dense[pos]
+
+        ok = ~on_rows(((w, True) for w in exclude), bool)
+        l1 = on_rows(links1.items(), np.float64)
+        l2 = on_rows(links2.items(), np.float64)
+    else:
+        cand_words = [space.words[i] for i in indices]
+        ok = np.fromiter((w not in exclude and _is_good_idx(space, int(i))
+                          for w, i in zip(cand_words, indices)), dtype=bool, count=len(indices))
+        l1 = np.fromiter((links1.get(w, 0.0) for w in cand_words), dtype=np.float64,
+                         count=len(indices))
+        l2 = np.fromiter((links2.get(w, 0.0) for w in cand_words), dtype=np.float64,
+                         count=len(indices))
+    s1 = sims1.astype(np.float64)
+    s2 = sims2.astype(np.float64)
+    lo = np.minimum(s1, s2)
+    both = (l1 > 0) & (l2 > 0)
+    # People connect it to both words. The vectors still have to agree it is at
+    # least loosely related to each (ASSOC_FLOOR), but the balance and ceiling
+    # rules are for guessing a middle from geometry alone, and this isn't a guess.
+    ok_both = (s1 >= ASSOC_FLOOR) & (s2 >= ASSOC_FLOOR)
+    ok_one = (s1 >= MIN_FLOOR) & (s2 >= MIN_FLOOR) & ~_too_close_to_one_end(s1, s2, sim_ceiling)
+    ok &= np.where(both, ok_both, ok_one)
+    score = np.where(both,
+                     lo + ASSOC_BOTH_BONUS + ASSOC_STRENGTH * (l1 + l2) / 2,
+                     lo + ASSOC_ONE_SIDE * np.maximum(l1, l2))
+
+    best_word = None
+    live = np.flatnonzero(ok)
+    # Best first; the derived-form test is the costliest, so it runs only until
+    # the first candidate that passes it.
+    for k in live[np.argsort(-score[live], kind="stable")]:
+        word = space.words[indices[k]]
+        if not _is_derived_form(word, exclude, space.language):
             best_word = word
+            break
 
     if best_word is None:
         # Fallback 1: drop ceiling, keep adaptive floor
