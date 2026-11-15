@@ -326,11 +326,22 @@ trigger a redeploy for it to take effect.
 
 ## Launch checklist (sharing it publicly)
 
-Measured on the live free instance (0.1 CPU, Oregon) on 2026-11-13: no errors with
-40 simultaneous simulated players, but the server tops out around 12 guesses a
-second, so past ~25 people actively playing at once every guess waits 2-6s.
-About 0.4s of every request is the trip to Oregon. The free tier is enough for a
-LinkedIn post; these steps make the first impression good:
+**100 players at once on the free tier, measured.** On 2026-11-13 the live free
+instance (0.1 CPU, Oregon) topped out at ~12 guesses a second, so past ~25 active
+players every guess waited 2-6s. After the per-request work was cut (see the git
+log), the `loadtest` workflow ran 100 simulated players paced like people, from
+10 runners at once, on 2026-11-15:
+
+| request | count | errors | p50 | p95 | max |
+|---|---|---|---|---|---|
+| guess | 1,786 | 0 | 122ms | 152ms | 344ms |
+| word check | 3,572 | 0 | 120ms | 151ms | 366ms |
+| hint | 166 | 0 | 123ms | 158ms | 291ms |
+| new pair | 294 | 0 | 121ms | 262ms | 836ms |
+
+5,818 requests in 3.7 minutes (26 req/s), every one answered. Those times are
+from GitHub's US runners; a player in Israel adds ~0.3s of distance to Oregon.
+These steps make the first impression good:
 
 1. **Check the preview.** Paste the link into LinkedIn's
    [Post Inspector](https://www.linkedin.com/post-inspector/). LinkedIn caches
