@@ -135,7 +135,7 @@ Open http://localhost:5173. The Vite proxy forwards API calls to `localhost:8000
 
 ### Tests
 
-143 backend tests, none of which need the models, and 43 frontend tests:
+143 backend tests, none of which need the models, and 45 frontend tests:
 
 ```bash
 cd backend && ./venv/bin/python -m unittest discover -s test -v
@@ -365,8 +365,10 @@ what the model-based evals only approximate. Setup:
    Never put the secret key in Netlify; the frontend doesn't need it.
 3. Redeploy. The log shows `gamelog: on`.
 
-The welcome screen tells players what is kept. If the stored fields ever change,
-change that sentence too.
+When you turn it on, also tell players: the welcome screen had a line saying the
+words from games are kept with nothing that identifies them. It was removed while
+logging is off, because it would have been untrue. Restore it in `App.jsx` with
+the keys, and keep it matching what `gamelog.py` stores.
 
 ## Search and ads
 

@@ -118,7 +118,10 @@ export default function App() {
         usedWords,
         gameId
       );
-      setLastRound(result);
+      // The response doesn't echo the pair, and the path history and the share
+      // text both need it: without this every round's pair rendered empty and a
+      // shared result read "Started from: undefined + undefined".
+      setLastRound({ ...result, word1: currentPair.word1, word2: currentPair.word2 });
       setGamePhase("revealing");
     } catch (err) {
       // Shown inline next to the input (with any alternative spellings the
@@ -187,30 +190,15 @@ export default function App() {
         {gamePhase === "idle" && (
           <div className="idle-screen">
             <div className="idle-screen__card">
-              <HowItWorks lang={selectedLang} />
               {selectedLang === "he" ? (
                 <>
                   <h2 dir="rtl">ברוכים הבאים! 👋</h2>
                   <p dir="rtl">אתם והמחשב מנסים למצוא את המילה שבאמצע, ביחד!</p>
-                  <ul className="idle-screen__rules" dir="rtl">
-                    <li>🧠 חשבו על מילה שבאמצע בין שתי המילים</li>
-                    <li>🤫 אתם שולחים בו זמנית, לא רואים אחד את השני!</li>
-                    <li>🔄 לא נפגשתם? שתי המילים שלכם הופכות לזוג החדש</li>
-                    <li>🚫 אי אפשר לחזור על מילה שכבר נאמרה</li>
-                    <li>🏆 ניצחתם כשמגיעים לאותה מילה</li>
-                  </ul>
                 </>
               ) : (
                 <>
                   <h2 dir="ltr">Welcome! 👋</h2>
                   <p dir="ltr">You and the computer try to find the word in the middle, together!</p>
-                  <ul className="idle-screen__rules" dir="ltr">
-                    <li>🧠 Think of a word that sits between the two given words</li>
-                    <li>🤫 You both submit at the same time, no peeking at each other's guess!</li>
-                    <li>🔄 No match? Both of your words become the new pair</li>
-                    <li>🚫 A word that's already been said can't be used again</li>
-                    <li>🏆 You win when you both land on the same word</li>
-                  </ul>
                 </>
               )}
               <div className="idle-screen__lang-select">
@@ -246,12 +234,30 @@ export default function App() {
               {startError && (
                 <p className="idle-screen__error" role="alert">{startError}</p>
               )}
-              {/* Says exactly what backend/gamelog.py stores, no more and no less. */}
-              <p className="idle-screen__privacy">
-                {selectedLang === "he"
-                  ? "אנחנו שומרים את המילים מהמשחקים, בלי שום פרט מזהה, כדי ללמד את המחשב לחשוב כמו אנשים."
-                  : "We keep the words from games, with nothing that identifies you, to teach the computer to think like people."}
-              </p>
+              {/* Play sits above the demo and the rules: on a phone the demo alone
+                  used to fill the first screen and push Play out of sight. */}
+              <HowItWorks lang={selectedLang} />
+              {selectedLang === "he" ? (
+                <>
+                  <ul className="idle-screen__rules" dir="rtl">
+                    <li>🧠 חשבו על מילה שבאמצע בין שתי המילים</li>
+                    <li>🤫 אתם שולחים בו זמנית, לא רואים אחד את השני!</li>
+                    <li>🔄 לא נפגשתם? שתי המילים שלכם הופכות לזוג החדש</li>
+                    <li>🚫 אי אפשר לחזור על מילה שכבר נאמרה</li>
+                    <li>🏆 ניצחתם כשמגיעים לאותה מילה</li>
+                  </ul>
+                </>
+              ) : (
+                <>
+                  <ul className="idle-screen__rules" dir="ltr">
+                    <li>🧠 Think of a word that sits between the two given words</li>
+                    <li>🤫 You both submit at the same time, no peeking at each other's guess!</li>
+                    <li>🔄 No match? Both of your words become the new pair</li>
+                    <li>🚫 A word that's already been said can't be used again</li>
+                    <li>🏆 You win when you both land on the same word</li>
+                  </ul>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -281,7 +287,9 @@ export default function App() {
             rounds={roundNum}
             playerWord={lastRound.player_guess}
             computerWord={lastRound.computer_guess}
-            history={[...history, lastRound]}
+            // handleNextRound has already appended the winning round; adding it
+            // again here showed it twice and made a round-2 win share as round 3.
+            history={history}
             onNewGame={handleNewGame}
             language={lastRound.language}
           />

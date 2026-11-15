@@ -3,6 +3,9 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "../App";
 
+// jsdom has no canvas; the win screen's confetti is decoration.
+vi.mock("react-confetti", () => ({ default: () => null }));
+
 // The boot path is what a first-time visitor actually experiences: a hosted
 // backend may be waking up (models still loading) or unreachable entirely.
 //
@@ -99,4 +102,62 @@ describe("App boot states", () => {
       { timeout: 4000 },
     );
   });
+});
+
+describe("App game flow", () => {
+  it("keeps each round's pair in the path, which the share text starts from", async () => {
+    // The /guess response doesn't echo the pair. The path history used to render
+    // two empty pills per round, and a shared result read "undefined + undefined".
+    stubFetch((url) => {
+      const u = String(url);
+      if (u.includes("/health")) return ok({ status: "ok", models_loaded: true, languages: ["he", "en"] });
+      if (u.includes("/pair")) return ok({ word1: "חג", word2: "נרות", language: "he" });
+      if (u.includes("/validate")) return ok({ valid: true, in_vocab: true, suggestions: [] });
+      return ok({
+        computer_guess: "חנוכה", player_guess: "אור", player_similarity: 0.3,
+        computer_similarity: 0.6, player_computer_similarity: 0.23, is_won: false,
+        new_pair: ["אור", "חנוכה"], computer_reason: null, funny_message: null,
+        win_message: null, language: "he",
+      });
+    });
+    render(<App />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /בואו נשחק/ }));
+    await user.type(await screen.findByRole("textbox", { name: "הניחוש שלכם" }), "אור");
+    // Submit stays disabled until the debounced word check comes back.
+    const submit = await screen.findByRole("button", { name: /שלח ניחוש/ });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await user.click(submit);
+    await user.click(await screen.findByRole("button", { name: /סיבוב הבא/ }, { timeout: 3000 }));
+
+    const path = await screen.findByText("המסלול שלכם");
+    const pathBox = path.closest(".path-history");
+    expect(pathBox).toHaveTextContent("חג");
+    expect(pathBox).toHaveTextContent("נרות");
+  });
+
+  it("shows the winning round once on the win screen", async () => {
+    // It was appended twice, so a round-2 win was shared as "round 3".
+    stubFetch((url) => {
+      const u = String(url);
+      if (u.includes("/health")) return ok({ status: "ok", models_loaded: true, languages: ["he", "en"] });
+      if (u.includes("/pair")) return ok({ word1: "חג", word2: "נרות", language: "he" });
+      if (u.includes("/validate")) return ok({ valid: true, in_vocab: true, suggestions: [] });
+      return ok({
+        computer_guess: "חנוכה", player_guess: "חנוכה", player_similarity: 0.6,
+        computer_similarity: 0.6, player_computer_similarity: 1, is_won: true,
+        new_pair: ["חנוכה", "חנוכה"], computer_reason: null, funny_message: null,
+        win_message: "ניצחנו!", language: "he",
+      });
+    });
+    const { container } = render(<App />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /בואו נשחק/ }));
+    await user.type(await screen.findByRole("textbox", { name: "הניחוש שלכם" }), "חנוכה");
+    const submit = await screen.findByRole("button", { name: /שלח ניחוש/ });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await user.click(submit);
+    await screen.findByRole("button", { name: /שתפו את התוצאה/ }, { timeout: 5000 });
+    expect(container.querySelectorAll(".path-history__round")).toHaveLength(1);
+  }, 10000);
 });

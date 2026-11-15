@@ -61,7 +61,6 @@ FUNNY_MESSAGES_HE = {
     "medium": [
         "קרוב! אתם באותו תחום 🎯",
         "חושבים דומה! עוד קצת 🔥",
-        "ממש מתקרבים 🌟",
     ],
     "close": [
         "כמעט! כמעט אותה מילה 😮",
@@ -83,7 +82,6 @@ FUNNY_MESSAGES_EN = {
     "medium": [
         "Close! You're in the same area 🎯",
         "Great minds think alike... almost 🔥",
-        "Getting really close 🌟",
     ],
     "close": [
         "So close! Almost the same word 😮",
@@ -220,11 +218,14 @@ def get_funny_message(similarity: float, lang: str, word1: str, word2: str) -> O
 
     messages = FUNNY_MESSAGES_HE if lang == "he" else FUNNY_MESSAGES_EN
 
-    if similarity < 0.15:
+    # Same cut-offs as the bar's colours in RevealCard.jsx (red < 40 <= orange <
+    # 70 <= green), so the words never contradict the colour: a play-through
+    # showed "Getting really close" beside a red 31%.
+    if similarity < 0.20:
         return random.choice(messages["very_far"])
-    elif similarity < 0.30:
+    elif similarity < 0.40:
         return random.choice(messages["far"])
-    elif similarity < 0.45:
+    elif similarity < 0.55:
         return random.choice(messages["medium"])
     return random.choice(messages["close"])
 
