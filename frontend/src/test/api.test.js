@@ -55,7 +55,7 @@ describe("api client under a busy server", () => {
 describe("friendlyError", () => {
   it("speaks the game's language for busy and rate-limited", () => {
     expect(friendlyError({ code: "rate_limited" }, true)).toMatch(/יותר מדי/);
-    expect(friendlyError({ code: "timeout" }, false)).toMatch(/busy/);
+    expect(friendlyError({ code: "timeout" }, false)).toMatch(/slow/);
   });
 
   it("passes word errors through untouched", () => {

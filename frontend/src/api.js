@@ -119,15 +119,25 @@ export function newGameId() {
   return globalThis.crypto?.randomUUID?.() ?? null;
 }
 
+// The word check runs while the player types, so it is two-thirds of all traffic
+// (measured: ~2 checks per guess). The answer for a word never changes, so a word
+// checked once (a retype, a backspace and back) costs the server nothing again.
+const validationCache = new Map();
+const VALIDATION_CACHE_MAX = 500;
+
 export async function validateWord(word) {
-  return handleResponse(await fetch(`${BASE_URL}/validate/${encodeURIComponent(word)}`));
+  if (validationCache.has(word)) return validationCache.get(word);
+  const result = await handleResponse(await fetch(`${BASE_URL}/validate/${encodeURIComponent(word)}`));
+  if (validationCache.size >= VALIDATION_CACHE_MAX) validationCache.clear();
+  validationCache.set(word, result);
+  return result;
 }
 
-export async function getHint(word1, word2) {
+export async function getHint(word1, word2, usedWords = []) {
   return request(`${BASE_URL}/hint`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ word1, word2 }),
+    body: JSON.stringify({ word1, word2, used_words: usedWords }),
   });
 }
 
@@ -138,8 +148,8 @@ export function friendlyError(err, isHe) {
                 : "Too many guesses in a row. Try again in a few seconds";
   }
   if (["timeout", "network", "server_busy"].includes(err?.code)) {
-    return isHe ? "השרת עמוס כרגע, הרבה אנשים משחקים. נסו שוב בעוד רגע"
-                : "The server is busy right now, lots of people are playing. Try again in a moment";
+    return isHe ? "החיבור לשרת איטי כרגע. נסו שוב בעוד רגע"
+                : "The server is slow to respond right now. Try again in a moment";
   }
   return err?.message;
 }

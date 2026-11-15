@@ -56,12 +56,11 @@ FUNNY_MESSAGES_HE = {
     "far": [
         "עוד לא באותו ראש, אבל מתקרבים 🤷",
         "כיוון שונה, נסו לחשוב על מה שמחבר את שתיהן 💡",
-        "לא באותו מקום, אבל לא נואש! 💪",
+        "לא באותו מקום, אבל לא מתייאשים! 💪",
     ],
     "medium": [
         "קרוב! אתם באותו תחום 🎯",
         "חושבים דומה! עוד קצת 🔥",
-        "ממש מתקרבים 🌟",
     ],
     "close": [
         "כמעט! כמעט אותה מילה 😮",
@@ -83,7 +82,6 @@ FUNNY_MESSAGES_EN = {
     "medium": [
         "Close! You're in the same area 🎯",
         "Great minds think alike... almost 🔥",
-        "Getting really close 🌟",
     ],
     "close": [
         "So close! Almost the same word 😮",
@@ -92,11 +90,11 @@ FUNNY_MESSAGES_EN = {
 }
 
 EASTER_EGGS = {
-    frozenset({"חביתה", "ביצה"}): "מחזור אכזרי... מה קדם למה? 🐔🥚",
-    frozenset({"שלום", "מלחמה"}): "שנסיים עם שלום, בסוף... ✌️",
+    frozenset({"חביתה", "ביצה"}): "מה בא קודם, הביצה או החביתה? 🥚🍳",
+    frozenset({"שלום", "מלחמה"}): "שרק נסיים בשלום ✌️",
     frozenset({"אמא", "אבא"}): "ביחד או לחוד? 👨‍👩‍👧",
     frozenset({"ים", "חול"}): "חופשה! 🏖️",
-    frozenset({"love", "hate"}): "Freud would be proud. 🛋️",
+    frozenset({"love", "hate"}): "Freud would be proud 🛋️",
     frozenset({"cat", "internet"}): "You know exactly where this is going 🐱",
     frozenset({"fire", "ice"}): "A Song of... 🐉",
     frozenset({"day", "night"}): "Somewhere, someone is sleeping 🌙",
@@ -105,9 +103,9 @@ EASTER_EGGS = {
 }
 
 WIN_MESSAGES_HE = [
-    "ניצחנו! 🎉 הגעתם לאמצע!",
-    "מושלם! 🌟 המחשב ואתם חשבתם אותו דבר!",
-    "יאללה! 🎊 הגעתם לאמצע ביחד!",
+    "ניצחנו! 🎉 הגענו לאמצע!",
+    "מושלם! 🌟 אתם והמחשב חשבתם על אותו דבר!",
+    "יאללה! 🎊 נפגשנו באמצע!",
     "בום! 💥 זה בדיוק האמצע!",
 ]
 
@@ -122,15 +120,15 @@ WIN_MESSAGES_EN = [
 # never claim the two words were the same — they say the words were close enough, and
 # name both, so the player can see exactly what happened.
 NEAR_WIN_MESSAGES_HE = [
-    "מספיק קרוב! 🎯 '{a}' ו'{b}' זה כמעט אותו דבר.",
-    "סגרנו! 🤝 '{a}' ו'{b}' — בעצם אותו רעיון.",
-    "כמעט מילה במילה! ✨ '{a}' מול '{b}' — נחשב!",
+    "מספיק קרוב! 🎯 '{a}' ו־'{b}' הן כמעט אותו דבר.",
+    "סגרנו! 🤝 '{a}' ו־'{b}' הן בעצם אותו רעיון.",
+    "כמעט מילה במילה! ✨ '{a}' מול '{b}', נחשב!",
 ]
 
 NEAR_WIN_MESSAGES_EN = [
     "Close enough! 🎯 '{a}' and '{b}' are practically the same idea.",
-    "That'll do! 🤝 '{a}' vs '{b}' — near enough to call it.",
-    "Almost word for word! ✨ '{a}' and '{b}' — we'll take it.",
+    "That'll do! 🤝 '{a}' vs '{b}' is near enough to call it.",
+    "Almost word for word! ✨ '{a}' and '{b}', we'll take it.",
 ]
 
 
@@ -220,11 +218,16 @@ def get_funny_message(similarity: float, lang: str, word1: str, word2: str) -> O
 
     messages = FUNNY_MESSAGES_HE if lang == "he" else FUNNY_MESSAGES_EN
 
-    if similarity < 0.15:
+    # Same cut-offs as the bar's colours in RevealCard.jsx (red < 40 <= orange <
+    # 70 <= green), so the words never contradict the colour: a play-through
+    # showed "Getting really close" beside a red 31%. "So close" waits for green:
+    # Hebrew food words sit near each other, and "almost the same word" for
+    # mango vs beans (0.55-0.70) read as random.
+    if similarity < 0.20:
         return random.choice(messages["very_far"])
-    elif similarity < 0.30:
+    elif similarity < 0.40:
         return random.choice(messages["far"])
-    elif similarity < 0.45:
+    elif similarity < 0.70:
         return random.choice(messages["medium"])
     return random.choice(messages["close"])
 

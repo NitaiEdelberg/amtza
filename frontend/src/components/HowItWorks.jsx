@@ -52,7 +52,7 @@ export default function HowItWorks({ lang }) {
       </div>
 
       <div className={`howto__line${step >= 3 ? " in" : ""}`}>
-        <span className="howto__who">{isHe ? "המחשב חושב על:" : "Computer thinks of:"}</span>
+        <span className="howto__who">{isHe ? "המחשב חושב על:" : "The computer thinks of:"}</span>
         <strong>{computer}</strong>
       </div>
 

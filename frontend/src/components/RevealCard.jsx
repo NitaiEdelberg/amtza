@@ -5,9 +5,10 @@ function isHebrew(text) {
   return /[֐-׿]/.test(text ?? "");
 }
 
+// Same cut-offs as the messages in backend/game.py (get_funny_message).
 function proximityColor(pct) {
-  if (pct >= 80) return "#68d391";
-  if (pct >= 55) return "#f6ad55";
+  if (pct >= 70) return "#68d391";
+  if (pct >= 40) return "#f6ad55";
   return "#fc8181";
 }
 

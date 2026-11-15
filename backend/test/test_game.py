@@ -99,7 +99,7 @@ class TestMessages(unittest.TestCase):
 
     def test_near_miss_gets_the_close_message(self):
         from game import FUNNY_MESSAGES_EN
-        self.assertIn(get_funny_message(0.6, "en", "x", "y"), FUNNY_MESSAGES_EN["close"])
+        self.assertIn(get_funny_message(0.75, "en", "x", "y"), FUNNY_MESSAGES_EN["close"])
 
     def test_message_follows_guess_closeness_not_midpoint(self):
         # A play-tester got "close!" at 11%: the tier came from the player's distance

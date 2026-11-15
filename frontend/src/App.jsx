@@ -32,6 +32,9 @@ export default function App() {
   // A ref, not state: nothing renders from it — it only decides whether pressing
   // Play can go straight through — so re-rendering the app on each poll is waste.
   const readyLangsRef = useRef([]);
+  // Starting pairs from this visit's recent games. A play-tester got the same
+  // pair twice in a row; with ~100 pairs per language that happens to someone.
+  const recentPairsRef = useRef([]);
 
   // Warm the backend the moment the page opens, and keep a note of which
   // languages are playable.
@@ -73,7 +76,7 @@ export default function App() {
       if (!ready) {
         setStartError(
           lang === "he"
-            ? "השרת לא מגיב. הוא כנראה נרדם. נסו שוב בעוד רגע."
+            ? "השרת לא מגיב, כנראה נרדם. נסו שוב בעוד רגע."
             : "The server isn't responding. It may be asleep. Try again in a moment."
         );
         setIsLoading(false);
@@ -83,7 +86,12 @@ export default function App() {
     }
 
     try {
-      const pair = await getRandomPair(lang);
+      let pair = await getRandomPair(lang);
+      const key = (p) => `${p.word1}|${p.word2}`;
+      for (let i = 0; i < 3 && recentPairsRef.current.includes(key(pair)); i++) {
+        pair = await getRandomPair(lang);
+      }
+      recentPairsRef.current = [key(pair), ...recentPairsRef.current].slice(0, 8);
       setCurrentPair(pair);
       setGameId(newGameId());
       setHistory([]);
@@ -118,7 +126,10 @@ export default function App() {
         usedWords,
         gameId
       );
-      setLastRound(result);
+      // The response doesn't echo the pair, and the path history and the share
+      // text both need it: without this every round's pair rendered empty and a
+      // shared result read "Started from: undefined + undefined".
+      setLastRound({ ...result, word1: currentPair.word1, word2: currentPair.word2 });
       setGamePhase("revealing");
     } catch (err) {
       // Shown inline next to the input (with any alternative spellings the
@@ -158,7 +169,7 @@ export default function App() {
   async function handleGetHint() {
     if (hintUsed || !currentPair) return;
     try {
-      const res = await getHint(currentPair.word1, currentPair.word2);
+      const res = await getHint(currentPair.word1, currentPair.word2, usedWords);
       setHintWords(res.hints || []);
       setHintUsed(true);
     } catch {
@@ -178,6 +189,9 @@ export default function App() {
     <div className="app" dir={isHe ? "rtl" : "ltr"}>
       <header className="app-header">
         <h1 className="app-title">אמצע</h1>
+        {/* The logo is Hebrew in both modes; a reader who doesn't read Hebrew
+            should still be able to say the game's name. */}
+        {!isHe && <p className="app-title__latin">Amtza</p>}
         <p className="app-subtitle">
           {isHe ? "מצאו את המילה שבאמצע" : "Find the word in the middle"}
         </p>
@@ -187,30 +201,15 @@ export default function App() {
         {gamePhase === "idle" && (
           <div className="idle-screen">
             <div className="idle-screen__card">
-              <HowItWorks lang={selectedLang} />
               {selectedLang === "he" ? (
                 <>
                   <h2 dir="rtl">ברוכים הבאים! 👋</h2>
                   <p dir="rtl">אתם והמחשב מנסים למצוא את המילה שבאמצע, ביחד!</p>
-                  <ul className="idle-screen__rules" dir="rtl">
-                    <li>🧠 חשבו על מילה שבאמצע בין שתי המילים</li>
-                    <li>🤫 אתם שולחים בו זמנית, לא רואים אחד את השני!</li>
-                    <li>🔄 לא נפגשתם? שתי המילים שלכם הופכות לזוג החדש</li>
-                    <li>🚫 אי אפשר לחזור על מילה שכבר נאמרה</li>
-                    <li>🏆 ניצחתם כשמגיעים לאותה מילה</li>
-                  </ul>
                 </>
               ) : (
                 <>
                   <h2 dir="ltr">Welcome! 👋</h2>
                   <p dir="ltr">You and the computer try to find the word in the middle, together!</p>
-                  <ul className="idle-screen__rules" dir="ltr">
-                    <li>🧠 Think of a word that sits between the two given words</li>
-                    <li>🤫 You both submit at the same time, no peeking at each other's guess!</li>
-                    <li>🔄 No match? Both of your words become the new pair</li>
-                    <li>🚫 A word that's already been said can't be used again</li>
-                    <li>🏆 You win when you both land on the same word</li>
-                  </ul>
                 </>
               )}
               <div className="idle-screen__lang-select">
@@ -230,7 +229,7 @@ export default function App() {
               >
                 {waking
                   ? (selectedLang === "he" ? "מעירים את השרת… ⏳" : "Waking the server… ⏳")
-                  : (selectedLang === "he" ? "בואו נשחק! 🎮" : "Let's Play! 🎮")}
+                  : (selectedLang === "he" ? "בואו נשחק! 🎮" : "Let's play! 🎮")}
               </button>
               {waking && (
                 <p className="idle-screen__waking" role="status">
@@ -239,19 +238,37 @@ export default function App() {
                         ? "אין תשובה מהשרת. עוד מנסים…"
                         : "No answer yet. Still trying…")
                     : (selectedLang === "he"
-                        ? "הפעם הראשונה ביום לוקחת כדקה. השרת נרדם כשאף אחד לא משחק"
-                        : "The first visit of the day takes about a minute. The server sleeps when nobody is playing")}
+                        ? "הכניסה הראשונה ביום יכולה לקחת עד דקה, כי השרת נרדם כשאף אחד לא משחק."
+                        : "The first game of the day can take up to a minute, because the server naps when nobody is playing.")}
                 </p>
               )}
               {startError && (
                 <p className="idle-screen__error" role="alert">{startError}</p>
               )}
-              {/* Says exactly what backend/gamelog.py stores, no more and no less. */}
-              <p className="idle-screen__privacy">
-                {selectedLang === "he"
-                  ? "אנחנו שומרים את המילים מהמשחקים, בלי שום פרט מזהה, כדי ללמד את המחשב לחשוב כמו אנשים."
-                  : "We keep the words from games, with nothing that identifies you, to teach the computer to think like people."}
-              </p>
+              {/* Play sits above the demo and the rules: on a phone the demo alone
+                  used to fill the first screen and push Play out of sight. */}
+              <HowItWorks lang={selectedLang} />
+              {selectedLang === "he" ? (
+                <>
+                  <ul className="idle-screen__rules" dir="rtl">
+                    <li>🧠 חשבו על מילה שבאמצע בין שתי המילים</li>
+                    <li>🤫 אתם והמחשב עונים בו־זמנית, בלי לראות את התשובה של השני!</li>
+                    <li>🔄 לא נפגשתם? שתי המילים שלכם הופכות לזוג החדש</li>
+                    <li>🚫 אי אפשר לחזור על מילה שכבר נאמרה</li>
+                    <li>🏆 מנצחים כששניכם מגיעים לאותה מילה</li>
+                  </ul>
+                </>
+              ) : (
+                <>
+                  <ul className="idle-screen__rules" dir="ltr">
+                    <li>🧠 Think of a word that sits between the two words</li>
+                    <li>🤫 You and the computer answer at the same time. No peeking!</li>
+                    <li>🔄 No match? Both of your words become the new pair</li>
+                    <li>🚫 A word that's already been said can't be used again</li>
+                    <li>🏆 You win when you both land on the same word</li>
+                  </ul>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -272,6 +289,7 @@ export default function App() {
             onNewGame={handleNewGame}
             hintWords={hintWords}
             hintUsed={hintUsed}
+            usedWords={usedWords}
           />
         )}
 
@@ -281,7 +299,9 @@ export default function App() {
             rounds={roundNum}
             playerWord={lastRound.player_guess}
             computerWord={lastRound.computer_guess}
-            history={[...history, lastRound]}
+            // handleNextRound has already appended the winning round; adding it
+            // again here showed it twice and made a round-2 win share as round 3.
+            history={history}
             onNewGame={handleNewGame}
             language={lastRound.language}
           />

@@ -69,7 +69,7 @@ describe("WinScreen", () => {
   it("offers a new game", async () => {
     const onNewGame = vi.fn();
     renderWin({ onNewGame });
-    screen.getByRole("button", { name: /New Game/ }).click();
+    screen.getByRole("button", { name: /New game/ }).click();
     expect(onNewGame).toHaveBeenCalled();
   });
 });

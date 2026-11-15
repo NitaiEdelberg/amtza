@@ -51,7 +51,7 @@ export default function SiteFooter({ language = "he" }) {
             <h2>איך המחשב בוחר מילה</h2>
             <p>
               לכל מילה יש ייצוג מספרי שנלמד מתוך ויקיפדיה העברית, כך שמילים בעלות
-              משמעות דומה יושבות קרוב זו לזו. המחשב מחשב את הנקודה שבאמצע בין שתי
+              משמעות דומה יושבות קרוב זו לזו. המחשב מוצא את הנקודה שבאמצע בין שתי
               המילים ומחפש סביבה את המילה המאוזנת ביותר, כזו שקשורה לשתי המילים
               במידה דומה, ולא מילה שנצמדת רק לאחת מהן. הוא בוחר רק מתוך רשימה של
               מילים יומיומיות, כדי שהתשובה תמיד תהיה מילה שמכירים.
@@ -106,7 +106,7 @@ export default function SiteFooter({ language = "he" }) {
               balanced word around it: one related to both words roughly equally,
               rather than one glued to a single side. It only ever answers from a
               curated list of everyday words, so the answer is always something you
-              would recognise.
+              would recognize.
             </p>
           </section>
 

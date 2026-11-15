@@ -23,7 +23,7 @@ afterEach(() => {
 describe("GuessInput", () => {
   it("disables submit until a valid word is typed", async () => {
     render(<GuessInput onSubmit={() => {}} currentPair={hebrewPair} />);
-    expect(screen.getByRole("button", { name: /שלח ניחוש/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /שלחו ניחוש/ })).toBeDisabled();
   });
 
   it("submits the typed word", async () => {
@@ -33,7 +33,7 @@ describe("GuessInput", () => {
     render(<GuessInput onSubmit={onSubmit} currentPair={hebrewPair} />);
 
     await user.type(screen.getByRole("textbox"), "בוקר");
-    const btn = screen.getByRole("button", { name: /שלח ניחוש/ });
+    const btn = screen.getByRole("button", { name: /שלחו ניחוש/ });
     await waitFor(() => expect(btn).toBeEnabled());
     await user.click(btn);
     expect(onSubmit).toHaveBeenCalledWith("בוקר");
@@ -46,7 +46,19 @@ describe("GuessInput", () => {
 
     await user.type(screen.getByRole("textbox"), "שבת");
     expect(await screen.findByText(/כבר בזוג הנוכחי/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /שלח ניחוש/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /שלחו ניחוש/ })).toBeDisabled();
+  });
+
+  it("blocks a word already said earlier in the game", async () => {
+    // The rules promise no repeats; the computer always kept that, the player
+    // could break it.
+    const user = userEvent.setup();
+    stubValidate({ valid: true, canonical: "חלב", language: "he", in_vocab: true, suggestions: [] });
+    render(<GuessInput onSubmit={() => {}} currentPair={hebrewPair} usedWords={["תה", "חלב", "שבת", "קפה"]} />);
+
+    await user.type(screen.getByRole("textbox"), "חלב");
+    expect(await screen.findByText(/כבר נאמרה במשחק הזה/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /שלחו ניחוש/ })).toBeDisabled();
   });
 
   it("warns before submitting when the word has no vector, and offers alternatives", async () => {
@@ -97,12 +109,12 @@ describe("GuessInput", () => {
     const box = screen.getByRole("textbox");
     await user.type(box, "בוקר");
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /שלח ניחוש/ })).toBeEnabled()
+      expect(screen.getByRole("button", { name: /שלחו ניחוש/ })).toBeEnabled()
     );
 
     // Keep typing; the held result describes the earlier word only.
     await user.type(box, "ים");
-    expect(screen.getByRole("button", { name: /שלח ניחוש/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /שלחו ניחוש/ })).toBeDisabled();
   });
 
   it("starts empty for a new round (GameBoard remounts it via key)", async () => {
@@ -126,7 +138,7 @@ describe("GuessInput", () => {
 
   it("uses English copy for an English pair", () => {
     render(<GuessInput onSubmit={() => {}} currentPair={{ word1: "fire", word2: "ice", language: "en" }} />);
-    expect(screen.getByPlaceholderText("type a word...")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Type a word…")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Submit guess/ })).toBeInTheDocument();
   });
 });
